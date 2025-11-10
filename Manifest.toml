@@ -2,7 +2,7 @@
 
 julia_version = "1.10.10"
 manifest_format = "2.0"
-project_hash = "7fbf1e589551b8804c6884f68868d1af8345efcb"
+project_hash = "ec7a7e452b827b05e05c3d4f994c0a0fe21879c9"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -1178,6 +1178,14 @@ deps = ["Artifacts", "JLLWrappers", "Libdl"]
 git-tree-sha1 = "58cdd8fb2201a6267e1db87ff148dd6c1dbd8ad8"
 uuid = "f50d1b31-88e8-58de-be2c-1cc44531875f"
 version = "0.5.1+0"
+
+[[deps.Rosenbrock]]
+deps = ["DrWatson", "Pkg", "PyPlot", "Random", "Statistics"]
+git-tree-sha1 = "e827d38c857d8c118d517faa1d378e2041133c70"
+repo-rev = "main"
+repo-url = "https://github.com/luqigroup/Rosenbrock.jl"
+uuid = "c23fb45c-8f64-40e4-b594-aa994fe44f9b"
+version = "0.1.0"
 
 [[deps.SHA]]
 uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
