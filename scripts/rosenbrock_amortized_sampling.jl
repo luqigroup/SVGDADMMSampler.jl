@@ -66,7 +66,6 @@ while pair_wise_dist < 4.0f0
         end
     end
     global pair_wise_dist = pair_wise_dist^(1.0f0 / test_num / (test_num - 1))
-    println(pair_wise_dist)
 end
 
 # Predicted samples
