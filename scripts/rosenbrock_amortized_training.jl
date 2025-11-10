@@ -58,7 +58,7 @@ num_batches = length(train_loader)
 # Optimizer.
 opt = Flux.Optimiser(
     Flux.ExpDecay(args["lr"], 0.9f0, num_batches * args["lr_step"], 1.0f-6),
-    Flux.ADAM(args["lr"]),
+    Flux.Adam(args["lr"]),
 )
 
 # Training log keeper.

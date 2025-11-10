@@ -15,7 +15,7 @@ using Seaborn
 using LinearAlgebra
 using Flux
 
-font_prop = sef_plot_configs()[1]
+font_prop = set_plot_configs()[1]
 args = read_config("rosenbrock_amortized_sampling.json")
 args = parse_input_args(args)
 
