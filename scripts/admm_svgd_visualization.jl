@@ -14,8 +14,8 @@ using LaTeXStrings
 args = @dict(
     n_particles = 1000,
     n_iterations = 1000,
-    μ = 1.0f0,
-    η = 0.01f0,
+    μ = 0.1f0,
+    η = 0.001f0,
     a = 1.0f0,
     b = 100.0f0,
     sim_name = "admm_svgd_rosenbrock"
@@ -161,7 +161,7 @@ fig = figure("histograms", figsize=(12, 5))
 
 # True samples histogram
 subplot(1, 2, 1)
-hist2d(
+plt.hist2d(
     true_samples[1, :],
     true_samples[2, :],
     bins=75,
@@ -177,7 +177,7 @@ title("True Sample Density")
 
 # ADMM-SVGD samples histogram
 subplot(1, 2, 2)
-hist2d(
+plt.hist2d(
     final_particles[1, :],
     final_particles[2, :],
     bins=75,
