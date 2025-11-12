@@ -171,3 +171,5 @@ println("Sampling complete!")
 println("="^60)
 println("\nTo visualize results, run:")
 println("  julia scripts/admm_svgd_visualization.jl")
+
+upload_to_dropbox(args["sim_name"])

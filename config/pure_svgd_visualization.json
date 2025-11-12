@@ -1,0 +1,11 @@
+{
+    "sim_name": "pure_svgd_rosenbrock",
+    "n_particles": 1000,
+    "n_iterations": 2000,
+    "eta": 0.5,
+    "h": null,
+    "a": 1.0,
+    "mu_rb": 0.0,
+    "save_every": 100,
+    "update_bandwidth_every": 50
+}
