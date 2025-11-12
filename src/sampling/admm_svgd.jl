@@ -1,4 +1,4 @@
-# ADMM-SVGD Sampler for Constrained Distributions
+# ADMM-SVGD Sampler for Constrained Distributions - VECTORIZED VERSION
 # Authors: Ali Siahkoohi, alisk@ucf.edu
 # Date: Nov 2025
 
@@ -62,9 +62,10 @@ function ADMMSVGDSampler(n_particles::Int, n_dim::Int; μ::T=0.1f0, η::T=0.001f
 end
 
 """
-    rbf_kernel(X::Matrix{T}, bandwidth::T) where T
+    rbf_kernel_vectorized(X::Matrix{T}, bandwidth::T) where T
 
-Compute RBF kernel matrix and its gradients.
+Compute RBF kernel matrix and its gradients using VECTORIZED operations.
+This is MUCH faster than the nested loop version.
 
 # Arguments
 - `X`: Particle positions (n_dim × n_particles)
@@ -74,23 +75,29 @@ Compute RBF kernel matrix and its gradients.
 - `K`: Kernel matrix (n_particles × n_particles)
 - `grad_K`: Gradient of kernel w.r.t. particles (n_dim × n_particles × n_particles)
 """
-function rbf_kernel(X::Matrix{T}, bandwidth::T) where T
+function rbf_kernel_vectorized(X::Matrix{T}, bandwidth::T) where T
     n_dim, n_particles = size(X)
-    K = zeros(T, n_particles, n_particles)
-    grad_K = zeros(T, n_dim, n_particles, n_particles)
 
-    for i in 1:n_particles
-        for j in 1:n_particles
-            diff = X[:, j] .- X[:, i]  # n_dim vector
-            dist_sq = sum(diff .^ 2)
+    # Compute pairwise differences using broadcasting
+    # Create views for broadcasting: X[:, i] for all i, and X[:, j] for all j
+    # diff[d, i, j] = X[d, j] - X[d, i]
 
-            # Kernel value
-            K[i, j] = exp(-dist_sq / (2 * bandwidth^2))
+    # Method: use reshape to add singleton dimensions for broadcasting
+    X_i = reshape(X, n_dim, n_particles, 1)      # n_dim × n_particles × 1
+    X_j = reshape(X, n_dim, 1, n_particles)      # n_dim × 1 × n_particles
+    diff = X_j .- X_i                             # Broadcasting: n_dim × n_particles × n_particles
 
-            # Gradient of kernel w.r.t. X[:, j]
-            grad_K[:, i, j] = K[i, j] .* diff ./ bandwidth^2
-        end
-    end
+    # Compute squared distances: dist_sq[i, j] = ||X[:, j] - X[:, i]||²
+    dist_sq = sum(diff .^ 2, dims=1)[1, :, :]  # Sum over dimension, gives n_particles × n_particles
+
+    # Compute kernel matrix
+    K = exp.(-dist_sq ./ (2 * bandwidth^2))
+
+    # Compute gradient of kernel w.r.t. X[:, j]
+    # grad_K[d, i, j] = K[i, j] * (X[d, j] - X[d, i]) / h²
+    # Broadcasting: K is n_particles × n_particles, need to align with diff
+    K_expanded = reshape(K, 1, n_particles, n_particles)  # Add dimension for broadcasting
+    grad_K = K_expanded .* diff ./ bandwidth^2
 
     return K, grad_K
 end
@@ -105,12 +112,18 @@ h = median(pairwise_distances) / sqrt(2 * log(n_particles))
 function compute_bandwidth(X::Matrix{T}) where T
     n_dim, n_particles = size(X)
 
-    # Compute pairwise distances
+    # Vectorized pairwise distance computation
+    # Use reshape and broadcasting to compute all pairwise differences at once
+    X_i = reshape(X, n_dim, n_particles, 1)      # n_dim × n_particles × 1
+    X_j = reshape(X, n_dim, 1, n_particles)      # n_dim × 1 × n_particles
+    diff = X_j .- X_i                             # n_dim × n_particles × n_particles
+    dist_sq = sum(diff .^ 2, dims=1)[1, :, :]    # n_particles × n_particles
+
+    # Extract upper triangular distances (avoid diagonal and duplicates)
     distances = T[]
     for i in 1:n_particles
         for j in (i+1):n_particles
-            dist = norm(X[:, i] .- X[:, j])
-            push!(distances, T(dist))
+            push!(distances, sqrt(dist_sq[i, j]))
         end
     end
 
@@ -123,51 +136,50 @@ function compute_bandwidth(X::Matrix{T}) where T
 end
 
 """
-    svgd_update!(sampler::ADMMSVGDSampler, gradients::Matrix{T}; clip_norm::T=T(10.0)) where T
+    svgd_update_vectorized!(sampler::ADMMSVGDSampler, gradients::Matrix{T}; clip_norm::T=T(10.0)) where T
 
-Perform SVGD update on particles with gradient clipping.
+Perform SVGD update on particles with gradient clipping - VECTORIZED VERSION.
+This is MUCH faster than the nested loop version.
 
 # Arguments
 - `sampler`: The ADMM-SVGD sampler
 - `gradients`: Log-posterior gradients (n_dim × n_particles)
 - `clip_norm`: Maximum gradient norm (default: 10.0)
 """
-function svgd_update!(sampler::ADMMSVGDSampler{T}, gradients::Matrix{T}; clip_norm::T=T(10.0)) where T
+function svgd_update_vectorized!(sampler::ADMMSVGDSampler{T}, gradients::Matrix{T}; clip_norm::T=T(10.0)) where T
     n_dim, n_particles = sampler.n_dim, sampler.n_particles
 
-    # Clip gradients to prevent explosion
-    gradients_clipped = copy(gradients)
-    for j in 1:n_particles
-        grad_norm = norm(gradients_clipped[:, j])
-        if grad_norm > clip_norm
-            gradients_clipped[:, j] .*= clip_norm / grad_norm
-        end
-    end
+    # Clip gradients to prevent explosion (vectorized)
+    grad_norms = sqrt.(sum(gradients .^ 2, dims=1))  # 1 × n_particles
+    scale_factors = min.(one(T), clip_norm ./ grad_norms)
+    gradients_clipped = gradients .* scale_factors
 
     # Compute kernel bandwidth
     h = compute_bandwidth(sampler.particles)
 
-    # Compute kernel and its gradients
-    K, grad_K = rbf_kernel(sampler.particles, h)
+    # Compute kernel and its gradients (vectorized)
+    K, grad_K = rbf_kernel_vectorized(sampler.particles, h)
 
-    # Compute SVGD directions for each particle
-    phi = zeros(T, n_dim, n_particles)
+    # Compute SVGD directions using matrix operations
+    # Attractive term: Σⱼ k(xⱼ, xᵢ) ∇log p(xⱼ)
+    # = gradients_clipped * K'  where K[i,j] is kernel from j to i
+    # Result is n_dim × n_particles
+    attractive = gradients_clipped * K'  # Matrix multiplication!
 
-    for i in 1:n_particles
-        # Attractive term: Σⱼ k(xⱼ, xᵢ) ∇log p(xⱼ)
-        attractive = sum(K[i, j] .* gradients_clipped[:, j] for j in 1:n_particles)
+    # Repulsive term: Σⱼ ∇ₓⱼ k(xⱼ, xᵢ)
+    # grad_K is n_dim × n_particles × n_particles
+    # Sum over j (second dimension of n_particles)
+    repulsive = sum(grad_K, dims=3)[:, :, 1]  # n_dim × n_particles
 
-        # Repulsive term: Σⱼ ∇ₓⱼ k(xⱼ, xᵢ)
-        repulsive = sum(grad_K[:, i, j] for j in 1:n_particles)
-
-        phi[:, i] = (attractive .+ repulsive) ./ n_particles
-    end
+    # Combine terms
+    phi = (attractive .+ repulsive) ./ n_particles
 
     # Adaptive step size based on gradient magnitude
-    phi_norm = maximum(norm(phi[:, i]) for i in 1:n_particles)
-    effective_eta = phi_norm > T(1.0) ? sampler.η / phi_norm : sampler.η
+    phi_norms = sqrt.(sum(phi .^ 2, dims=1))
+    phi_norm_max = maximum(phi_norms)
+    effective_eta = phi_norm_max > T(1.0) ? sampler.η / phi_norm_max : sampler.η
 
-    # Update particles
+    # Update particles (vectorized)
     sampler.particles .+= effective_eta .* phi
 
     return nothing
@@ -208,8 +220,8 @@ function sample!(sampler::ADMMSVGDSampler{T}, n_iterations::Int,
         # Step 2: Compute gradients (user-defined)
         grads = compute_grad_fn(sampler)
 
-        # Step 3: SVGD update on particles
-        svgd_update!(sampler, grads)
+        # Step 3: SVGD update on particles (VECTORIZED!)
+        svgd_update_vectorized!(sampler, grads)
 
         # Step 4: Update multipliers (user-defined)
         update_multiplier_fn(sampler)
