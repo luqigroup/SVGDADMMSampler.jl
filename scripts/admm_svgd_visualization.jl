@@ -16,7 +16,7 @@ args = @dict(
     n_iterations = 1000,
     μ = 0.1f0,
     η = 0.001f0,
-    h = 0.8f0,         # Must match what was used in sampling
+    h = nothing,         # Must match what was used in sampling
     a = 1.0f0,
     b = 100.0f0,
     sim_name = "admm_svgd_rosenbrock"
@@ -263,3 +263,5 @@ println("\n" * "="^60)
 println("Visualization complete!")
 println("="^60)
 println("\nPlots saved to: $save_dir")
+
+upload_to_dropbox(args[:sim_name])

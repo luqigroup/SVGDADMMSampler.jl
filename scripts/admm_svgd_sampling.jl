@@ -18,7 +18,7 @@ args = @dict(
     n_iterations = 1000,
     μ = 0.1f0,           # Penalty parameter
     η = 0.001f0,         # SVGD step size (smaller for stability)
-    h = 0.8f0,           # Bandwidth: nothing = auto-compute, or specify value (e.g., 0.8f0)
+    h = nothing,         # Bandwidth: nothing = auto-compute, or specify value (e.g., 0.8f0)
     a = 1.0f0,           # Rosenbrock parameter a
     b = 100.0f0,         # Rosenbrock parameter b
     sim_name = "admm_svgd_rosenbrock"
@@ -103,8 +103,6 @@ function update_multiplier_fn(s)
 end
 
 # Run sampling with progress bar
-# Bandwidth is FIXED (never updated) for maximum speed
-println("\nRunning ADMM-SVGD sampling with FIXED bandwidth...")
 history = sample!(
     sampler,
     args[:n_iterations],
@@ -113,7 +111,7 @@ history = sample!(
     update_multiplier_fn;
     verbose=true,
     save_every=10,
-    update_bandwidth_every=nothing  # Never update bandwidth (FASTEST)
+    update_bandwidth_every=50
 )
 
 println("\nFinal particle statistics:")
@@ -172,4 +170,4 @@ println("="^60)
 println("\nTo visualize results, run:")
 println("  julia scripts/admm_svgd_visualization.jl")
 
-upload_to_dropbox(args["sim_name"])
+upload_to_dropbox(args[:sim_name])

@@ -170,9 +170,10 @@ function svgd_update_vectorized!(sampler::ADMMSVGDSampler{T}, gradients::Matrix{
     n_dim, n_particles = sampler.n_dim, sampler.n_particles
 
     # Clip gradients to prevent explosion (vectorized)
-    grad_norms = sqrt.(sum(gradients .^ 2, dims=1))  # 1 × n_particles
-    scale_factors = min.(one(T), clip_norm ./ grad_norms)
-    gradients_clipped = gradients .* scale_factors
+    # grad_norms = sqrt.(sum(gradients .^ 2, dims=1))  # 1 × n_particles
+    # scale_factors = min.(one(T), clip_norm ./ grad_norms)
+    # gradients_clipped = gradients .* scale_factors
+    gradients_clipped = gradients
 
     # Optionally update bandwidth based on current particle distribution
     if update_bandwidth

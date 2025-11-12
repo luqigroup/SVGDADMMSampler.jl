@@ -11,7 +11,7 @@
 Next steps:
  - start making the pure svgd script modular, separating the core svgd functionalitirs
  - slowly incorporate the svgd admm idea, building on the above modular implementation
- - how to check the new code? are there hyperparameters that it will revert to pure svgd?
+ - how to check the new code? are there hyperparameters that it will revert to pure svgd? (this is important)
 
 | Parameter                      | Role                                                             | Limit → Effect                                                                                                                |
 | :----------------------------- | :--------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------- |
