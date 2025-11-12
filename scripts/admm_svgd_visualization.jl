@@ -10,12 +10,13 @@ using PyPlot
 using Statistics
 using LaTeXStrings
 
-# Load results
+# Load results - must match parameters used in sampling!
 args = @dict(
     n_particles = 1000,
     n_iterations = 1000,
     μ = 0.1f0,
     η = 0.001f0,
+    h = 0.8f0,         # Must match what was used in sampling
     a = 1.0f0,
     b = 100.0f0,
     sim_name = "admm_svgd_rosenbrock"
@@ -37,6 +38,11 @@ constraint_violations = results["constraint_violations"]
 
 println("Loaded $(size(final_particles, 2)) final particles")
 println("Loaded $(length(particle_history)) snapshots from history")
+
+# Print bandwidth info if available
+if haskey(results, "h")
+    println("Bandwidth used: $(round(results["h"], digits=4))")
+end
 
 # Print log-pdf statistics if available
 if haskey(results, "final_logpdf") && haskey(results, "true_logpdf")

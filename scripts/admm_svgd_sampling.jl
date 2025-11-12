@@ -18,6 +18,7 @@ args = @dict(
     n_iterations = 1000,
     μ = 0.1f0,           # Penalty parameter
     η = 0.001f0,         # SVGD step size (smaller for stability)
+    h = 0.8f0,           # Bandwidth: nothing = auto-compute, or specify value (e.g., 0.8f0)
     a = 1.0f0,           # Rosenbrock parameter a
     b = 100.0f0,         # Rosenbrock parameter b
     sim_name = "admm_svgd_rosenbrock"
@@ -32,9 +33,12 @@ for (key, val) in args
 end
 println("="^60)
 
-# Initialize sampler
+# Initialize sampler with cached bandwidth (computed once at initialization)
 n_dim = 2  # Rosenbrock is 2D
-sampler = ADMMSVGDSampler(args[:n_particles], n_dim; μ=args[:μ], η=args[:η])
+sampler = ADMMSVGDSampler(args[:n_particles], n_dim;
+                          μ=args[:μ],
+                          η=args[:η],
+                          h=args[:h])  # Bandwidth computed here and cached
 
 # Create Rosenbrock distribution for gradient computation
 RB_dist = RosenbrockDistribution(0.0f0, args[:a])
@@ -42,6 +46,7 @@ RB_dist = RosenbrockDistribution(0.0f0, args[:a])
 println("\nInitial particle statistics:")
 println("  Mean: ", mean(sampler.particles, dims=2)[:])
 println("  Std:  ", std(sampler.particles, dims=2)[:])
+println("  Bandwidth (h): ", round(sampler.h, digits=4))
 
 # Define the three functions needed for ADMM-SVGD
 
@@ -98,7 +103,8 @@ function update_multiplier_fn(s)
 end
 
 # Run sampling with progress bar
-println("\nRunning ADMM-SVGD sampling...")
+# Bandwidth is FIXED (never updated) for maximum speed
+println("\nRunning ADMM-SVGD sampling with FIXED bandwidth...")
 history = sample!(
     sampler,
     args[:n_iterations],
@@ -106,12 +112,14 @@ history = sample!(
     compute_grad_fn,
     update_multiplier_fn;
     verbose=true,
-    save_every=10
+    save_every=10,
+    update_bandwidth_every=nothing  # Never update bandwidth (FASTEST)
 )
 
 println("\nFinal particle statistics:")
 println("  Mean: ", mean(sampler.particles, dims=2)[:])
 println("  Std:  ", std(sampler.particles, dims=2)[:])
+println("  Bandwidth (h): ", round(sampler.h, digits=4), " (unchanged)")
 
 # Generate true samples for comparison
 println("\nGenerating true Rosenbrock samples for comparison...")
@@ -130,14 +138,22 @@ println("  Std log-pdf:  ", round(std(true_logpdf), digits=4))
 
 # Save results
 println("\nSaving results...")
+
+# Update args dict to include the actual bandwidth used
+args_with_h = copy(args)
+if args[:h] === nothing
+    args_with_h[:h] = sampler.h  # Save the auto-computed bandwidth
+end
+
 results = merge(
-    args,
+    args_with_h,
     Dict(
         "final_particles" => sampler.particles,
         "true_samples" => true_samples,
         "particle_history" => history["particle_history"],
         "constraint_violations" => history["constraint_violations"],
         "iterations_saved" => history["iterations_saved"],
+        "bandwidth_history" => history["bandwidth_history"],
         "final_z" => history["final_z"],
         "final_epsilon" => history["final_epsilon"],
         "final_logpdf" => final_logpdf,
