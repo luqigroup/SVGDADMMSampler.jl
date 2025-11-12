@@ -45,63 +45,54 @@ println("  Std:  ", std(sampler.particles, dims=2)[:])
 
 # Define the three functions needed for ADMM-SVGD
 
-# 1. Solve for z
+# 1. Solve for z given (x, ε)
+# From the corrected LaTeX: z = (2b·x₂ + ε + μ·x₁²) / (2b + μ)
 function solve_z_fn(s)
     x1 = s.particles[1, :]
     x2 = s.particles[2, :]
 
-    numerator = args[:a] .+ args[:b] .* x2 .+ s.ε .+ s.μ .* (x1 .^ 2)
-    denominator = 1 + args[:b] + s.μ
+    numerator = 2 * args[:b] .* x2 .+ s.ε .+ s.μ .* (x1 .^ 2)
+    denominator = 2 * args[:b] + s.μ
 
     s.z .= numerator ./ denominator
     return nothing
 end
 
-# 2. Compute gradients using Rosenbrock's gradlogpdf
+# 2. Compute gradients of augmented Lagrangian
+# This is the GRADIENT OF THE LOG-POSTERIOR, which is the NEGATIVE gradient of L
+# L(x, z, ε) = (a - x₁)² + b(x₂ - z)² - ε(z - x₁²) + (μ/2)(z - x₁²)²
+#
+# ∂L/∂x₁ = -2(a - x₁) + 2x₁[ε - μ(z - x₁²)]
+# ∂L/∂x₂ = 2b(x₂ - z)
+#
+# Since we want ∇log p(x) = -∇L(x, z, ε):
+# ∇log p(x₁) = 2(a - x₁) + 2x₁[μ(z - x₁²) - ε]
+# ∇log p(x₂) = 2b(z - x₂)
 function compute_grad_fn(s)
-    # Use the gradlogpdf from Rosenbrock package (explicitly qualified)
-    grads_unconstrained = Rosenbrock.gradlogpdf(RB_dist, s.particles)  # 2 × n_particles
-
-    # Add constraint gradient terms from augmented Lagrangian
     x1 = s.particles[1, :]
     x2 = s.particles[2, :]
     z = s.z
     ε = s.ε
     μ = s.μ
 
-    # From L(x, z, ε) = (1/2)(z - a)² + (b/2)(x₂ - z)² - ε(z - x₁²) + (μ/2)(z - x₁²)²
-    # We want ∇log p(x) = -∇_x L (since we minimize L)
+    # ∇log p(x₁) = 2(a - x₁) + 2x₁[μ(z - x₁²) - ε]
+    grad_x1 = 2 .* (args[:a] .- x1) .+ 2 .* x1 .* (μ .* (z .- x1 .^ 2) .- ε)
 
-    # ∂L/∂x₁ = -ε·(-2x₁) + μ(z - x₁²)(-2x₁) = 2x₁[ε - μ(z - x₁²)]
-    # So: ∇log p(x₁) = -∂L/∂x₁ = 2x₁[μ(z - x₁²) - ε]
-    constraint_grad_x1 = 2 .* x1 .* (μ .* (z .- x1 .^ 2) .- ε)
+    # ∇log p(x₂) = 2b(z - x₂)
+    grad_x2 = 2 * args[:b] .* (z .- x2)
 
-    # ∂L/∂x₂ = b(x₂ - z)
-    # So: ∇log p(x₂) = -∂L/∂x₂ = -b(x₂ - z) = b(z - x₂)
-    constraint_grad_x2 = args[:b] .* (z .- x2)
-
-    # Total gradient: unconstrained gradlogpdf + constraint contribution
-    grads_total = grads_unconstrained .+ vcat(constraint_grad_x1', constraint_grad_x2')
-
-    return grads_total
+    return vcat(grad_x1', grad_x2')  # Return as 2 × n_particles matrix
 end
 
 # 3. Update multipliers (dual ascent on ε)
+# Following equation (33) from corrected LaTeX: ε ← ε + (x₁² - z)
 function update_multiplier_fn(s)
     x1 = s.particles[1, :]
-    # Constraint: z = x₁²
-    # Residual: z - x₁²
-    # Standard ADMM dual ascent: ε ← ε + ρ·(constraint_residual)
-    # But we need to check the sign based on our Lagrangian formulation
-    # L = ... - ε(z - x₁²) + ...
-    # ∂L/∂ε = -(z - x₁²)
-    # Dual ascent (maximize): ε ← ε + step_size·∂L/∂ε = ε - step_size·(z - x₁²)
-    # OR equivalently, if we wrote L = ... + ε(x₁² - z) + ..., then ascent would be:
-    # ε ← ε + step_size·(x₁² - z)
 
-    # Following equation (8d): E ← E + (B - AU)
-    # For Rosenbrock: ε ← ε + (x₁² - z) [note the order!]
-    constraint_residual = x1 .^ 2 .- s.z  # Changed sign!
+    # ∂L/∂ε = -(z - x₁²)
+    # Dual ascent: ε ← ε + step_size·∂L/∂ε
+    # With step_size = 1: ε ← ε - (z - x₁²) = ε + (x₁² - z)
+    constraint_residual = x1 .^ 2 .- s.z
     s.ε .+= constraint_residual
     return nothing
 end
@@ -126,11 +117,16 @@ println("  Std:  ", std(sampler.particles, dims=2)[:])
 println("\nGenerating true Rosenbrock samples for comparison...")
 true_samples = rand(RB_dist, args[:n_particles])
 
-# Compute KL divergence estimate (based on log-pdf)
+# Compute log-pdf for final particles
 println("\nComputing log-pdf for final particles...")
 final_logpdf = Rosenbrock.logpdf(RB_dist, sampler.particles)
 println("  Mean log-pdf: ", round(mean(final_logpdf), digits=4))
 println("  Std log-pdf:  ", round(std(final_logpdf), digits=4))
+
+true_logpdf = Rosenbrock.logpdf(RB_dist, true_samples)
+println("\nTrue sample log-pdf for comparison:")
+println("  Mean log-pdf: ", round(mean(true_logpdf), digits=4))
+println("  Std log-pdf:  ", round(std(true_logpdf), digits=4))
 
 # Save results
 println("\nSaving results...")
@@ -144,7 +140,8 @@ results = merge(
         "iterations_saved" => history["iterations_saved"],
         "final_z" => history["final_z"],
         "final_epsilon" => history["final_epsilon"],
-        "final_logpdf" => final_logpdf
+        "final_logpdf" => final_logpdf,
+        "true_logpdf" => true_logpdf
     )
 )
 

@@ -38,6 +38,14 @@ constraint_violations = results["constraint_violations"]
 println("Loaded $(size(final_particles, 2)) final particles")
 println("Loaded $(length(particle_history)) snapshots from history")
 
+# Print log-pdf statistics if available
+if haskey(results, "final_logpdf") && haskey(results, "true_logpdf")
+    println("\nLog-PDF Statistics:")
+    println("  ADMM-SVGD mean: $(round(mean(results["final_logpdf"]), digits=4))")
+    println("  True samples mean: $(round(mean(results["true_logpdf"]), digits=4))")
+    println("  Difference: $(round(mean(results["true_logpdf"]) - mean(results["final_logpdf"]), digits=4))")
+end
+
 # Create output directory
 save_dir = plotsdir(args[:sim_name], savename(args))
 mkpath(save_dir)
@@ -135,12 +143,7 @@ for (idx, snap_idx) in enumerate(snapshot_indices)
     ylabel(L"x_2")
 
     # Calculate actual iteration number
-    iter_num = snap_idx * 10
-    if snap_idx == 1
-        iter_num = 1
-    elseif snap_idx == length(particle_history)
-        iter_num = args[:n_iterations]
-    end
+    iter_num = results["iterations_saved"][snap_idx]
 
     title("Iteration $iter_num")
     grid(true, alpha=0.3)
@@ -233,23 +236,24 @@ close(fig)
 println("  Saved: marginals.png")
 
 # =====================================================
-# Print summary statistics
+# Summary statistics
 # =====================================================
 println("\n" * "="^60)
 println("Summary Statistics")
 println("="^60)
 
-println("\nTrue samples:")
+println("\nTrue Samples:")
 println("  x₁: mean = $(round(mean(true_samples[1, :]), digits=3)), std = $(round(std(true_samples[1, :]), digits=3))")
 println("  x₂: mean = $(round(mean(true_samples[2, :]), digits=3)), std = $(round(std(true_samples[2, :]), digits=3))")
 
-println("\nADMM-SVGD samples:")
+println("\nADMM-SVGD Samples:")
 println("  x₁: mean = $(round(mean(final_particles[1, :]), digits=3)), std = $(round(std(final_particles[1, :]), digits=3))")
 println("  x₂: mean = $(round(mean(final_particles[2, :]), digits=3)), std = $(round(std(final_particles[2, :]), digits=3))")
 
-println("\nFinal constraint violation: $(round(constraint_violations[end], digits=6))")
+println("\nFinal Constraint Violation:")
+println("  Mean |z - x₁²|: $(round(constraint_violations[end], digits=6))")
 
 println("\n" * "="^60)
 println("Visualization complete!")
 println("="^60)
-println("Figures saved to: $save_dir")
+println("\nPlots saved to: $save_dir")
