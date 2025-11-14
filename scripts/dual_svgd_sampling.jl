@@ -97,7 +97,7 @@ function compute_grad_epsilon_fn(s)
 
     # ∂L/∂ε = -(z - x₁²)
     # ∇log p(ε) = -∂L/∂ε = (z - x₁²)
-    grad_ε = z .- x1 .^ 2
+    grad_ε = -(z .- x1 .^ 2)
 
     return grad_ε  # Return as vector (n_particles,)
 end

@@ -67,7 +67,7 @@ function DualSpaceSVGDSampler(n_particles::Int, n_dim::Int;
     end
 
     z = zeros(T, n_particles)
-    ε = zeros(T, n_particles)  # Initialize dual variables at zero
+    ε = T(0.5) .* randn(T, n_particles)
 
     # Compute or set bandwidth for ε
     if h_ε === nothing

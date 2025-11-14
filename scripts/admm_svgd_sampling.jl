@@ -121,7 +121,10 @@ end
 function update_multiplier_fn(s)
     x1 = s.particles[1, :]
     constraint_residual = x1 .^ 2 .- s.z
-    s.ε .+= constraint_residual
+    s.ε .+= s.μ .* constraint_residual  # ← Add s.μ scaling
+
+    # Optional safety: clip to prevent any explosion
+    s.ε .= clamp.(s.ε, -10.0f0, 10.0f0)
     return nothing
 end
 
