@@ -12,6 +12,11 @@ Next steps:
  - start making the pure svgd script modular, separating the core svgd functionalitirs
  - slowly incorporate the svgd admm idea, building on the above modular implementation
  - how to check the new code? are there hyperparameters that it will revert to pure svgd? (this is important)
+ - big bug: my rosenbrock is different than the hardcoded rosenbrock in the example. fix.
+ - came up with hyperparameters that produce rosenborck-looking samples (hardcoded, need to change to verify comparison)
+ - summary of changes: add more svgd steps per admm iteration. fixed minus sign in replusion
+ - added gpu option to speed of mat-mat products
+ - still needs fix: how do properly do multiple svgd steps per admm
 
 | Parameter                      | Role                                                             | Limit → Effect                                                                                                                |
 | :----------------------------- | :--------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------- |
