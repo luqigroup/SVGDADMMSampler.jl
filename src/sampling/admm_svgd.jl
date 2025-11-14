@@ -1,4 +1,5 @@
 # ADMM-SVGD Sampler for Constrained Distributions - VECTORIZED VERSION
+# WITH BANDWIDTH COLLAPSE PREVENTION
 # Authors: Ali Siahkoohi, alisk@ucf.edu
 # Date: Nov 2025
 
@@ -24,6 +25,7 @@ for constraint solving and gradient computation.
 - `μ::T`: Penalty parameter for constraint enforcement
 - `η::T`: SVGD step size
 - `h::T`: RBF kernel bandwidth (cached for efficiency)
+- `h_min::T`: Minimum bandwidth to prevent collapse
 """
 mutable struct ADMMSVGDSampler{T<:AbstractFloat}
     n_particles::Int
@@ -34,12 +36,13 @@ mutable struct ADMMSVGDSampler{T<:AbstractFloat}
     μ::T
     η::T
     h::T
+    h_min::T
 end
 
 """
-    ADMMSVGDSampler(n_particles::Int, n_dim::Int; μ::T=0.1f0, η::T=0.001f0, h::Union{T,Nothing}=nothing, init_particles=nothing) where T
+    ADMMSVGDSampler(n_particles::Int, n_dim::Int; μ::T=0.1f0, η::T=0.001f0, h::Union{T,Nothing}=nothing, h_min::T=0.1f0, init_particles=nothing) where T
 
-Construct an ADMM-SVGD sampler.
+Construct an ADMM-SVGD sampler with bandwidth collapse prevention.
 
 # Arguments
 - `n_particles`: Number of particles
@@ -47,14 +50,13 @@ Construct an ADMM-SVGD sampler.
 - `μ`: Penalty parameter (default: 0.1)
 - `η`: SVGD step size (default: 0.001)
 - `h`: RBF kernel bandwidth. If `nothing`, computed using median heuristic (default: nothing)
-       Recommended value: ~0.5 to 2.0 for normalized data
-       Note: Will be converted to match the type of μ and η
+- `h_min`: Minimum bandwidth to prevent collapse (default: 0.1)
 - `init_particles`: Initial particles (n_dim × n_particles), or nothing for random init
 
 # Returns
 - `ADMMSVGDSampler` initialized with particles and cached bandwidth
 """
-function ADMMSVGDSampler(n_particles::Int, n_dim::Int; μ::T=0.1f0, η::T=0.001f0, h::Union{Real,Nothing}=nothing, init_particles=nothing) where T<:AbstractFloat
+function ADMMSVGDSampler(n_particles::Int, n_dim::Int; μ::T=0.1f0, η::T=0.001f0, h::Union{Real,Nothing}=nothing, h_min::T=0.1f0, init_particles=nothing) where T<:AbstractFloat
     if init_particles === nothing
         particles = randn(T, n_dim, n_particles)
     else
@@ -64,17 +66,17 @@ function ADMMSVGDSampler(n_particles::Int, n_dim::Int; μ::T=0.1f0, η::T=0.001f
 
     # Compute or convert bandwidth to correct type
     if h === nothing
-        h_val = compute_bandwidth(particles)
-        @info "Computed initial bandwidth using median heuristic: h = $(round(h_val, digits=4))"
+        h_val = max(compute_bandwidth(particles), h_min)
+        @info "Computed initial bandwidth using median heuristic: h = $(round(h_val, digits=4)) (minimum: $h_min)"
     else
-        h_val = T(h)  # Convert to same type as μ and η
-        @info "Using user-specified bandwidth: h = $(round(h_val, digits=4))"
+        h_val = max(T(h), h_min)
+        @info "Using user-specified bandwidth: h = $(round(h_val, digits=4)) (minimum: $h_min)"
     end
 
     z = zeros(T, n_particles)
     ε = zeros(T, n_particles)
 
-    return ADMMSVGDSampler(n_particles, n_dim, particles, z, ε, μ, η, h_val)
+    return ADMMSVGDSampler(n_particles, n_dim, particles, z, ε, μ, η, h_val, h_min)
 end
 
 """
@@ -119,13 +121,13 @@ function rbf_kernel_vectorized(X::Matrix{T}, bandwidth::T) where T
 end
 
 """
-    compute_bandwidth(X::Matrix{T}) where T
+    compute_bandwidth(X::Matrix{T}; minimum::T=T(1e-6)) where T
 
-Compute kernel bandwidth using median heuristic.
+Compute kernel bandwidth using median heuristic with minimum threshold.
 
-h = median(pairwise_distances) / sqrt(2 * log(n_particles))
+h = max(median(pairwise_distances) / sqrt(2 * log(n_particles)), minimum)
 """
-function compute_bandwidth(X::Matrix{T}) where T
+function compute_bandwidth(X::Matrix{T}; minimum::T=T(1e-6)) where T
     n_dim, n_particles = size(X)
 
     # Vectorized pairwise distance computation
@@ -144,11 +146,11 @@ function compute_bandwidth(X::Matrix{T}) where T
     end
 
     if isempty(distances)
-        return one(T)
+        return max(one(T), minimum)
     end
 
     h = T(median(distances)) / T(sqrt(2 * log(n_particles)))
-    return max(h, T(1e-6))  # Avoid zero bandwidth
+    return max(h, minimum)
 end
 
 """
@@ -156,28 +158,26 @@ end
                             clip_norm::T=T(10.0), update_bandwidth::Bool=false) where T
 
 Perform SVGD update on particles with gradient clipping - VECTORIZED VERSION.
-This is MUCH faster than the nested loop version.
+Includes bandwidth collapse prevention.
 
 # Arguments
 - `sampler`: The ADMM-SVGD sampler
 - `gradients`: Log-posterior gradients (n_dim × n_particles)
 - `clip_norm`: Maximum gradient norm (default: 10.0)
 - `update_bandwidth`: If true, recompute bandwidth from current particles (default: false)
-                      Set to true if particle distribution changes dramatically
 """
 function svgd_update_vectorized!(sampler::ADMMSVGDSampler{T}, gradients::Matrix{T};
                                  clip_norm::T=T(10.0), update_bandwidth::Bool=false) where T
     n_dim, n_particles = sampler.n_dim, sampler.n_particles
 
     # Clip gradients to prevent explosion (vectorized)
-    # grad_norms = sqrt.(sum(gradients .^ 2, dims=1))  # 1 × n_particles
-    # scale_factors = min.(one(T), clip_norm ./ grad_norms)
-    # gradients_clipped = gradients .* scale_factors
     gradients_clipped = gradients
 
     # Optionally update bandwidth based on current particle distribution
+    # WITH MINIMUM THRESHOLD TO PREVENT COLLAPSE
     if update_bandwidth
-        sampler.h = compute_bandwidth(sampler.particles)
+        h_new = compute_bandwidth(sampler.particles; minimum=sampler.h_min)
+        sampler.h = max(h_new, sampler.h_min)
     end
 
     # Compute kernel and its gradients using cached bandwidth (vectorized)
@@ -194,7 +194,7 @@ function svgd_update_vectorized!(sampler::ADMMSVGDSampler{T}, gradients::Matrix{
     # Sum over j (second dimension of n_particles)
     repulsive = sum(grad_K, dims=3)[:, :, 1]  # n_dim × n_particles
 
-    # Combine terms
+    # Combine terms (PLUS because grad_K uses x^(j) - x^(i))
     phi = (attractive .+ repulsive) ./ n_particles
 
     # Adaptive step size based on gradient magnitude
@@ -224,7 +224,6 @@ Run ADMM-SVGD sampling for n_iterations with user-provided functions.
 - `verbose`: Print progress (default: false)
 - `save_every`: Save history every N iterations (default: 10)
 - `update_bandwidth_every`: Update bandwidth every N iterations. If `nothing`, never update (default: nothing)
-                            Recommended: 50-100 for adaptive behavior, `nothing` for maximum speed
 
 # Returns
 - `history`: Dictionary containing particle history and diagnostics
@@ -247,7 +246,7 @@ function sample!(sampler::ADMMSVGDSampler{T}, n_iterations::Int,
         grads = compute_grad_fn(sampler)
 
         # Step 3: SVGD update on particles (VECTORIZED!)
-        # Optionally update bandwidth
+        # Optionally update bandwidth WITH MINIMUM PROTECTION
         should_update_bandwidth = (update_bandwidth_every !== nothing) && (iter % update_bandwidth_every == 0)
         svgd_update_vectorized!(sampler, grads; update_bandwidth=should_update_bandwidth)
 

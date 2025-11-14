@@ -1,12 +1,12 @@
 {
   "sim_name": "admm_svgd_rosenbrock",
   "n_particles": 1000,
-  "n_iterations": 1000,
+  "n_iterations": 10000,
   "mu_penalty": 0.1,
   "eta": 0.001,
-  "h": null,
+  "h": 0.5,
   "mu_rb": 0.0,
   "a": 1.0,
-  "save_every": 10,
-  "update_bandwidth_every": 50
+  "save_every": 100,
+  "update_bandwidth_every": null
 }
