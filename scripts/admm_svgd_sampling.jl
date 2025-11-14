@@ -170,12 +170,12 @@ println("  Std log-pdf:  ", round(std(true_logpdf), digits=4))
 println("\nSaving results...")
 
 results = @dict(
-    sampler.particles,
-    true_samples,
-    history,
-    final_logpdf,
-    true_logpdf,
-    args
+    particles = sampler.particles,
+    true_samples = true_samples,
+    history = history,
+    final_logpdf = final_logpdf,
+    true_logpdf = true_logpdf,
+    args = args
 )
 
 # Create directory structure following DrWatson convention
