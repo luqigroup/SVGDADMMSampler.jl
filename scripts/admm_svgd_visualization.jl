@@ -64,7 +64,7 @@ fig1 = figure(figsize=(14, 6))
 subplot(1, 2, 1)
 # True samples (background)
 scatter(true_samples[1, :], true_samples[2, :],
-        alpha=0.2, s=1, c="gray", label="True Rosenbrock")
+        alpha=0.4, s=1, c="k", label="True Rosenbrock")
 # ADMM-SVGD particles (foreground)
 scatter(particles[1, :], particles[2, :],
         alpha=0.6, s=10, c="red", label="ADMM-SVGD Particles")
@@ -227,7 +227,7 @@ for (plot_idx, hist_idx) in enumerate(frame_indices)
 
     # Background: true distribution
     scatter(true_samples[1, :], true_samples[2, :],
-            alpha=0.1, s=0.5, c="gray")
+            alpha=0.4, s=0.5, c="k")
 
     # Foreground: ADMM-SVGD particles at this iteration
     scatter(particles_at_iter[1, :], particles_at_iter[2, :],
