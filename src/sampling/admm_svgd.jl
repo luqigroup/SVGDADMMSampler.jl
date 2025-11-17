@@ -1,282 +1,145 @@
-# ADMM-SVGD Sampler for Constrained Distributions - VECTORIZED VERSION
-# WITH BANDWIDTH COLLAPSE PREVENTION
 # Authors: Ali Siahkoohi, alisk@ucf.edu
 # Date: Nov 2025
+# ADMM-SVGD Sampler with per-particle auxiliary variables (fully vectorized)
 
-export ADMMSVGDSampler, sample!
+export ADMMSVGDSampler, step!
 
-using LinearAlgebra
 using Statistics
+using LinearAlgebra
 
 """
     ADMMSVGDSampler
 
-ADMM-based SVGD sampler for distributions with nonlinear constraints.
+Sampler using SVGD with ADMM structure where each particle has its own auxiliary variable z.
 
-This is a distribution-agnostic sampler that requires user-provided functions
-for constraint solving and gradient computation.
-
-# Fields
-- `n_particles::Int`: Number of particles
-- `n_dim::Int`: Dimension of the model space
-- `particles::Matrix{T}`: Particle positions (n_dim × n_particles)
-- `z::Vector{T}`: Auxiliary variables (one per particle)
-- `ε::Vector{T}`: Lagrange multipliers (one per particle)
-- `μ::T`: Penalty parameter for constraint enforcement
-- `η::T`: SVGD step size
-- `h::T`: RBF kernel bandwidth (cached for efficiency)
-- `h_min::T`: Minimum bandwidth to prevent collapse
+Fields:
+- particles: (n_dim, n_particles) state samples
+- z: (n_particles,) auxiliary variable (one per particle)
+- ε: (n_particles,) Lagrange multipliers (one per particle)
+- μ: penalty parameter
+- η: step size
+- h: kernel bandwidth (computed adaptively if not provided)
 """
-mutable struct ADMMSVGDSampler{T<:AbstractFloat}
-    n_particles::Int
-    n_dim::Int
-    particles::Matrix{T}
-    z::Vector{T}
-    ε::Vector{T}
-    μ::T
-    η::T
-    h::T
-    h_min::T
+mutable struct ADMMSVGDSampler
+    particles::Matrix{Float32}
+    z::Vector{Float32}
+    ε::Vector{Float32}
+    μ::Float32
+    η::Float32
+    h::Float32
+
+    function ADMMSVGDSampler(n_particles::Int, n_dim::Int;
+                             μ=1.0f0, η=0.01f0, h=nothing)
+        # Initialize particles from standard normal
+        particles = randn(Float32, n_dim, n_particles)
+
+        # Each particle has its own z and ε
+        z = zeros(Float32, n_particles)
+        ε = zeros(Float32, n_particles)
+
+        # Compute initial bandwidth if not provided
+        h_val = isnothing(h) ? compute_bandwidth(particles) : h
+
+        new(particles, z, ε, μ, η, h_val)
+    end
 end
 
 """
-    ADMMSVGDSampler(n_particles::Int, n_dim::Int; μ::T=0.1f0, η::T=0.001f0, h::Union{T,Nothing}=nothing, h_min::T=0.1f0, init_particles=nothing) where T
+    compute_bandwidth(particles)
 
-Construct an ADMM-SVGD sampler with bandwidth collapse prevention.
-
-# Arguments
-- `n_particles`: Number of particles
-- `n_dim`: Dimension of model space
-- `μ`: Penalty parameter (default: 0.1)
-- `η`: SVGD step size (default: 0.001)
-- `h`: RBF kernel bandwidth. If `nothing`, computed using median heuristic (default: nothing)
-- `h_min`: Minimum bandwidth to prevent collapse (default: 0.1)
-- `init_particles`: Initial particles (n_dim × n_particles), or nothing for random init
-
-# Returns
-- `ADMMSVGDSampler` initialized with particles and cached bandwidth
+Compute median heuristic bandwidth using vectorized operations.
 """
-function ADMMSVGDSampler(n_particles::Int, n_dim::Int; μ::T=0.1f0, η::T=0.001f0, h::Union{Real,Nothing}=nothing, h_min::T=0.1f0, init_particles=nothing) where T<:AbstractFloat
-    if init_particles === nothing
-        particles = randn(T, n_dim, n_particles)
-    else
-        particles = T.(init_particles)
-        @assert size(particles) == (n_dim, n_particles) "init_particles must be $n_dim × $n_particles"
+function compute_bandwidth(particles::Matrix{Float32})
+    n_dim, n_particles = size(particles)
+    if n_particles < 2
+        return 1.0f0
     end
 
-    # Compute or convert bandwidth to correct type
-    if h === nothing
-        h_val = max(compute_bandwidth(particles), h_min)
-        @info "Computed initial bandwidth using median heuristic: h = $(round(h_val, digits=4)) (minimum: $h_min)"
-    else
-        h_val = max(T(h), h_min)
-        @info "Using user-specified bandwidth: h = $(round(h_val, digits=4)) (minimum: $h_min)"
+    # Compute pairwise squared distances using broadcasting
+    dists_sq = zeros(Float32, n_particles, n_particles)
+    for d in 1:n_dim
+        diff = particles[d, :]' .- particles[d, :]
+        dists_sq .+= diff .^ 2
     end
 
-    z = zeros(T, n_particles)
-    ε = zeros(T, n_particles)
+    # Extract upper triangular part (excluding diagonal) and take square root
+    dists = sqrt.(dists_sq[triu(trues(size(dists_sq)), 1)])
 
-    return ADMMSVGDSampler(n_particles, n_dim, particles, z, ε, μ, η, h_val, h_min)
+    # Median heuristic: h = median(distances) / sqrt(2 * log(n_particles))
+    return Float32(median(dists) / sqrt(2 * log(n_particles)))
 end
 
 """
-    rbf_kernel_vectorized(X::Matrix{T}, bandwidth::T) where T
+    svgd_update!(particles, gradients, η, h)
 
-Compute RBF kernel matrix and its gradients using VECTORIZED operations.
-This is MUCH faster than the nested loop version.
-
-# Arguments
-- `X`: Particle positions (n_dim × n_particles)
-- `bandwidth`: Kernel bandwidth h
-
-# Returns
-- `K`: Kernel matrix (n_particles × n_particles)
-- `grad_K`: Gradient of kernel w.r.t. particles (n_dim × n_particles × n_particles)
+Perform vectorized SVGD update.
 """
-function rbf_kernel_vectorized(X::Matrix{T}, bandwidth::T) where T
-    n_dim, n_particles = size(X)
+function svgd_update!(particles::Matrix{Float32}, gradients::Matrix{Float32},
+                      η::Float32, h::Float32)
+    n_dim, n_particles = size(particles)
 
-    # Compute pairwise differences using broadcasting
-    # Create views for broadcasting: X[:, i] for all i, and X[:, j] for all j
-    # diff[d, i, j] = X[d, j] - X[d, i]
-
-    # Method: use reshape to add singleton dimensions for broadcasting
-    X_i = reshape(X, n_dim, n_particles, 1)      # n_dim × n_particles × 1
-    X_j = reshape(X, n_dim, 1, n_particles)      # n_dim × 1 × n_particles
-    diff = X_j .- X_i                             # Broadcasting: n_dim × n_particles × n_particles
-
-    # Compute squared distances: dist_sq[i, j] = ||X[:, j] - X[:, i]||²
-    dist_sq = sum(diff .^ 2, dims=1)[1, :, :]  # Sum over dimension, gives n_particles × n_particles
-
-    # Compute kernel matrix
-    K = exp.(-dist_sq ./ (2 * bandwidth^2))
-
-    # Compute gradient of kernel w.r.t. X[:, j]
-    # grad_K[d, i, j] = K[i, j] * (X[d, j] - X[d, i]) / h²
-    # Broadcasting: K is n_particles × n_particles, need to align with diff
-    K_expanded = reshape(K, 1, n_particles, n_particles)  # Add dimension for broadcasting
-    grad_K = K_expanded .* diff ./ bandwidth^2
-
-    return K, grad_K
-end
-
-"""
-    compute_bandwidth(X::Matrix{T}; minimum::T=T(1e-6)) where T
-
-Compute kernel bandwidth using median heuristic with minimum threshold.
-
-h = max(median(pairwise_distances) / sqrt(2 * log(n_particles)), minimum)
-"""
-function compute_bandwidth(X::Matrix{T}; minimum::T=T(1e-6)) where T
-    n_dim, n_particles = size(X)
-
-    # Vectorized pairwise distance computation
-    # Use reshape and broadcasting to compute all pairwise differences at once
-    X_i = reshape(X, n_dim, n_particles, 1)      # n_dim × n_particles × 1
-    X_j = reshape(X, n_dim, 1, n_particles)      # n_dim × 1 × n_particles
-    diff = X_j .- X_i                             # n_dim × n_particles × n_particles
-    dist_sq = sum(diff .^ 2, dims=1)[1, :, :]    # n_particles × n_particles
-
-    # Extract upper triangular distances (avoid diagonal and duplicates)
-    distances = T[]
-    for i in 1:n_particles
-        for j in (i+1):n_particles
-            push!(distances, sqrt(dist_sq[i, j]))
-        end
+    # Compute pairwise squared distances
+    # dists_sq[i, j] = ||x^i - x^j||^2
+    dists_sq = zeros(Float32, n_particles, n_particles)
+    for d in 1:n_dim
+        diff = particles[d, :]' .- particles[d, :]
+        dists_sq .+= diff .^ 2
     end
 
-    if isempty(distances)
-        return max(one(T), minimum)
+    # Compute kernel matrix: K[i, j] = k(x^i, x^j) = exp(-||x^i - x^j||^2 / (2h^2))
+    K = exp.(-dists_sq ./ (2 * h^2))
+
+    # First term: sum_j k(x^i, x^j) * grad^j
+    # For each particle i: sum over j of K[i,j] * gradients[:, j]
+    term1 = gradients * K'  # (n_dim, n_particles) * (n_particles, n_particles)
+
+    # Second term: sum_j k(x^i, x^j) * (x^i - x^j) / h^2
+    # For each particle i and dimension d: sum_j K[i,j] * (x^i_d - x^j_d) / h^2
+    term2 = zeros(Float32, n_dim, n_particles)
+    for d in 1:n_dim
+        diff = particles[d, :]' .- particles[d, :]  # diff[i, j] = x^i_d - x^j_d
+        term2[d, :] = sum(K .* diff, dims=2)[:]  # Sum over j for each i
     end
+    term2 ./= h^2
 
-    h = T(median(distances)) / T(sqrt(2 * log(n_particles)))
-    return max(h, minimum)
-end
+    # Compute SVGD direction: phi^i = (term1 - term2) / n_particles
+    phi = (term1 .- term2) ./ n_particles
 
-"""
-    svgd_update_vectorized!(sampler::ADMMSVGDSampler, gradients::Matrix{T};
-                            clip_norm::T=T(10.0), update_bandwidth::Bool=false) where T
-
-Perform SVGD update on particles with gradient clipping - VECTORIZED VERSION.
-Includes bandwidth collapse prevention.
-
-# Arguments
-- `sampler`: The ADMM-SVGD sampler
-- `gradients`: Log-posterior gradients (n_dim × n_particles)
-- `clip_norm`: Maximum gradient norm (default: 10.0)
-- `update_bandwidth`: If true, recompute bandwidth from current particles (default: false)
-"""
-function svgd_update_vectorized!(sampler::ADMMSVGDSampler{T}, gradients::Matrix{T};
-                                 clip_norm::T=T(10.0), update_bandwidth::Bool=false) where T
-    n_dim, n_particles = sampler.n_dim, sampler.n_particles
-
-    # Clip gradients to prevent explosion (vectorized)
-    gradients_clipped = gradients
-
-    # Optionally update bandwidth based on current particle distribution
-    # WITH MINIMUM THRESHOLD TO PREVENT COLLAPSE
-    if update_bandwidth
-        h_new = compute_bandwidth(sampler.particles; minimum=sampler.h_min)
-        sampler.h = max(h_new, sampler.h_min)
-    end
-
-    # Compute kernel and its gradients using cached bandwidth (vectorized)
-    K, grad_K = rbf_kernel_vectorized(sampler.particles, sampler.h)
-
-    # Compute SVGD directions using matrix operations
-    # Attractive term: Σⱼ k(xⱼ, xᵢ) ∇log p(xⱼ)
-    # = gradients_clipped * K'  where K[i,j] is kernel from j to i
-    # Result is n_dim × n_particles
-    attractive = gradients_clipped * K'  # Matrix multiplication!
-
-    # Repulsive term: Σⱼ ∇ₓⱼ k(xⱼ, xᵢ)
-    # grad_K is n_dim × n_particles × n_particles
-    # Sum over j (second dimension of n_particles)
-    repulsive = sum(grad_K, dims=3)[:, :, 1]  # n_dim × n_particles
-
-    # Combine terms (PLUS because grad_K uses x^(j) - x^(i))
-    phi = (attractive .+ repulsive) ./ n_particles
-
-    # Adaptive step size based on gradient magnitude
-    phi_norms = sqrt.(sum(phi .^ 2, dims=1))
-    phi_norm_max = maximum(phi_norms)
-    effective_eta = phi_norm_max > T(1.0) ? sampler.η / phi_norm_max : sampler.η
-
-    # Update particles (vectorized)
-    sampler.particles .+= effective_eta .* phi
+    # Update particles
+    particles .+= η .* phi
 
     return nothing
 end
 
 """
-    sample!(sampler::ADMMSVGDSampler, n_iterations::Int,
-            solve_z_fn::Function, compute_grad_fn::Function, update_multiplier_fn::Function;
-            verbose::Bool=false, save_every::Int=10, update_bandwidth_every::Union{Int,Nothing}=nothing)
+    step!(sampler, solve_z_fn, compute_grad_fn, update_multiplier_fn)
 
-Run ADMM-SVGD sampling for n_iterations with user-provided functions.
+Perform one ADMM-SVGD iteration with fully vectorized SVGD update.
 
-# Arguments
-- `sampler`: The ADMM-SVGD sampler
-- `n_iterations`: Number of iterations
-- `solve_z_fn`: Function with signature `solve_z_fn(sampler) -> nothing` that updates sampler.z
-- `compute_grad_fn`: Function with signature `compute_grad_fn(sampler) -> Matrix` returning gradients (n_dim × n_particles)
-- `update_multiplier_fn`: Function with signature `update_multiplier_fn(sampler) -> nothing` that updates sampler.ε
-- `verbose`: Print progress (default: false)
-- `save_every`: Save history every N iterations (default: 10)
-- `update_bandwidth_every`: Update bandwidth every N iterations. If `nothing`, never update (default: nothing)
-
-# Returns
-- `history`: Dictionary containing particle history and diagnostics
+Arguments:
+- solve_z_fn: function(sampler) that updates sampler.z
+- compute_grad_fn: function(sampler) that returns (n_dim, n_particles) gradients
+- update_multiplier_fn: function(sampler) that updates sampler.ε
 """
-function sample!(sampler::ADMMSVGDSampler{T}, n_iterations::Int,
-                 solve_z_fn::Function, compute_grad_fn::Function, update_multiplier_fn::Function;
-                 verbose::Bool=false, save_every::Int=10, update_bandwidth_every::Union{Int,Nothing}=nothing) where T
+function step!(sampler::ADMMSVGDSampler,
+               solve_z_fn::Function,
+               compute_grad_fn::Function,
+               update_multiplier_fn::Function)
 
-    # Storage for history
-    particle_history = Vector{Matrix{T}}()
-    constraint_violations = Vector{T}()
-    iterations_saved = Vector{Int}()
-    bandwidth_history = Vector{T}()
+    # Step 1: Solve for z (per-particle, vectorized)
+    solve_z_fn(sampler)
 
-    for iter in 1:n_iterations
-        # Step 1: Solve for z (user-defined)
-        solve_z_fn(sampler)
+    # Step 2: Compute gradients (vectorized)
+    grads = compute_grad_fn(sampler)  # (n_dim, n_particles)
 
-        # Step 2: Compute gradients (user-defined)
-        grads = compute_grad_fn(sampler)
+    # Step 3: SVGD update (fully vectorized)
+    svgd_update!(sampler.particles, grads, sampler.η, sampler.h)
 
-        # Step 3: SVGD update on particles (VECTORIZED!)
-        # Optionally update bandwidth WITH MINIMUM PROTECTION
-        should_update_bandwidth = (update_bandwidth_every !== nothing) && (iter % update_bandwidth_every == 0)
-        svgd_update_vectorized!(sampler, grads; update_bandwidth=should_update_bandwidth)
+    # Step 4: Update multipliers (vectorized)
+    update_multiplier_fn(sampler)
 
-        # Step 4: Update multipliers (user-defined)
-        update_multiplier_fn(sampler)
+    # Step 5: Update bandwidth (vectorized)
+    sampler.h = compute_bandwidth(sampler.particles)
 
-        # Record history
-        if iter % save_every == 0 || iter == 1 || iter == n_iterations
-            push!(particle_history, copy(sampler.particles))
-            push!(iterations_saved, iter)
-            push!(bandwidth_history, sampler.h)
-
-            # Compute constraint violation (assumes Rosenbrock structure z = x₁²)
-            x1 = sampler.particles[1, :]
-            violation = mean(abs.(sampler.z .- x1 .^ 2))
-            push!(constraint_violations, violation)
-
-            if verbose
-                println("Iteration $iter: Constraint violation = $(round(violation, digits=6)), h = $(round(sampler.h, digits=4))")
-            end
-        end
-    end
-
-    return Dict(
-        "particle_history" => particle_history,
-        "constraint_violations" => constraint_violations,
-        "iterations_saved" => iterations_saved,
-        "bandwidth_history" => bandwidth_history,
-        "final_particles" => sampler.particles,
-        "final_z" => sampler.z,
-        "final_epsilon" => sampler.ε
-    )
+    return nothing
 end

@@ -1,12 +1,12 @@
 # Authors: Ali Siahkoohi, alisk@ucf.edu
 # Date: Nov 2025
-# Visualization for ADMM-SVGD sampling on Rosenbrock distribution - CLEANED UP
+# Visualization for ADMM-SVGD results
 
 using DrWatson
 @quickactivate :SVGDADMMSampler
 using Rosenbrock
-using JLD2
 using PyPlot
+using JLD2
 using Statistics
 using Printf
 
@@ -34,7 +34,6 @@ results = wload(filepath)
 
 particles = results["particles"]
 history = results["history"]
-true_samples = results["true_samples"]
 saved_args = results["args"]
 
 println("\nLoaded parameters:")
@@ -45,6 +44,10 @@ println("="^60)
 
 # Create Rosenbrock distribution for reference
 RB_dist = RosenbrockDistribution(saved_args["mu_rb"], saved_args["a"])
+
+# Generate ground truth samples for comparison
+n_true_samples = 10000
+true_samples = rand(RB_dist, n_true_samples)
 
 println("\nGenerating visualizations...")
 
@@ -83,6 +86,8 @@ title("ADMM-SVGD Sample Density")
 grid(true, alpha=0.3)
 
 tight_layout()
+
+# Save figure
 wsave(joinpath(save_path, "final_distribution.png"), fig1)
 close(fig1)
 println("  ✓ Saved final_distribution.png")
@@ -117,41 +122,23 @@ legend()
 grid(true, alpha=0.3)
 
 tight_layout()
+
+# Save figure
 wsave(joinpath(save_path, "marginal_distributions.png"), fig2)
 close(fig2)
 println("  ✓ Saved marginal_distributions.png")
 
 # ============================================================================
-# Figure 3: Convergence diagnostics
+# Figure 3: Convergence statistics over iterations
 # ============================================================================
-fig3 = figure(figsize=(14, 10))
-
-# Constraint violation over iterations
-subplot(2, 2, 1)
-plot(history["iterations_saved"], history["constraint_violations"],
-     linewidth=2, color="#4a4a4a")
-xlabel("Iteration")
-ylabel("Mean Constraint Violation")
-title(L"Constraint Violation: $|z - x_1^2|$")
-grid(true, alpha=0.3)
-yscale("log")
-
-# Bandwidth evolution
-subplot(2, 2, 2)
-plot(history["iterations_saved"], history["bandwidth_history"],
-     linewidth=2, color="purple")
-xlabel("Iteration")
-ylabel("Bandwidth (h)")
-title("SVGD Bandwidth Evolution")
-grid(true, alpha=0.3)
+fig3 = figure(figsize=(14, 13))
 
 # Mean convergence
-subplot(2, 2, 3)
-particle_history = history["particle_history"]
-mean_x1 = [mean(p[1, :]) for p in particle_history]
-mean_x2 = [mean(p[2, :]) for p in particle_history]
-plot(history["iterations_saved"], mean_x1, label=L"x_1", linewidth=2)
-plot(history["iterations_saved"], mean_x2, label=L"x_2", linewidth=2)
+subplot(3, 2, 1)
+mean_x1 = [m[1] for m in history["mean"]]
+mean_x2 = [m[2] for m in history["mean"]]
+plot(history["iteration"], mean_x1, label=L"x_1", linewidth=2)
+plot(history["iteration"], mean_x2, label=L"x_2", linewidth=2)
 axhline(y=mean(true_samples[1, :]), color="blue", linestyle="--",
         alpha=0.5, label=L"True mean $x_1$")
 axhline(y=mean(true_samples[2, :]), color="orange", linestyle="--",
@@ -163,11 +150,11 @@ legend()
 grid(true, alpha=0.3)
 
 # Standard deviation convergence
-subplot(2, 2, 4)
-std_x1 = [std(p[1, :]) for p in particle_history]
-std_x2 = [std(p[2, :]) for p in particle_history]
-plot(history["iterations_saved"], std_x1, label=L"x_1", linewidth=2)
-plot(history["iterations_saved"], std_x2, label=L"x_2", linewidth=2)
+subplot(3, 2, 2)
+std_x1 = [s[1] for s in history["std"]]
+std_x2 = [s[2] for s in history["std"]]
+plot(history["iteration"], std_x1, label=L"x_1", linewidth=2)
+plot(history["iteration"], std_x2, label=L"x_2", linewidth=2)
 axhline(y=std(true_samples[1, :]), color="blue", linestyle="--",
         alpha=0.5, label=L"True std $x_1$")
 axhline(y=std(true_samples[2, :]), color="orange", linestyle="--",
@@ -178,23 +165,63 @@ title("Convergence of Standard Deviation")
 legend()
 grid(true, alpha=0.3)
 
+# Bandwidth evolution
+subplot(3, 2, 3)
+plot(history["iteration"], history["bandwidth"], linewidth=2, color="purple")
+xlabel("Iteration")
+ylabel("Bandwidth (h)")
+title("SVGD Bandwidth Evolution")
+grid(true, alpha=0.3)
+
+# Log-likelihood evolution (using average over particles)
+subplot(3, 2, 4)
+plot(history["iteration"], history["avg_logpdf"], linewidth=2, color="green")
+xlabel("Iteration")
+ylabel("Average Log-Density")
+title("Average Log-Density Over Particles")
+grid(true, alpha=0.3)
+
+# Constraint residual evolution
+subplot(3, 2, 5)
+semilogy(history["iteration"], history["constraint_residual"], linewidth=2, color="red")
+xlabel("Iteration")
+ylabel(L"Mean $|z - x_1^2|$")
+title("ADMM Constraint Residual (log scale)")
+grid(true, alpha=0.3)
+
+# Constraint visualization: z vs x₁² scatter
+subplot(3, 2, 6)
+x1_final = particles[1, :]
+z_final = results["z"]
+x1_squared = x1_final .^ 2
+scatter(x1_squared, z_final, alpha=0.5, s=10, c="blue")
+# Plot perfect constraint line
+min_val = min(minimum(x1_squared), minimum(z_final))
+max_val = max(maximum(x1_squared), maximum(z_final))
+plot([min_val, max_val], [min_val, max_val], "r--", linewidth=2, label=L"$z = x_1^2$")
+xlabel(L"$x_1^2$")
+ylabel(L"$z$")
+title(L"Constraint Satisfaction: $z$ vs $x_1^2$")
+legend()
+grid(true, alpha=0.3)
+
 tight_layout()
-wsave(joinpath(save_path, "convergence_diagnostics.png"), fig3)
+wsave(joinpath(save_path, "convergence_statistics.png"), fig3)
 close(fig3)
-println("  ✓ Saved convergence_diagnostics.png")
+println("  ✓ Saved convergence_statistics.png")
 
 # ============================================================================
 # Figure 4: Evolution animation frames (selected iterations)
 # ============================================================================
 # Select 9 evenly spaced iterations to show evolution
-n_frames = min(9, length(history["iterations_saved"]))
-frame_indices = round.(Int, range(1, length(history["iterations_saved"]), length=n_frames))
+n_frames = min(9, length(history["iteration"]))
+frame_indices = round.(Int, range(1, length(history["iteration"]), length=n_frames))
 
 fig4 = figure(figsize=(15, 10))
 
 for (plot_idx, hist_idx) in enumerate(frame_indices)
-    iter = history["iterations_saved"][hist_idx]
-    particles_at_iter = particle_history[hist_idx]
+    iter = history["iteration"][hist_idx]
+    particles_at_iter = history["particles"][hist_idx]
 
     subplot(3, 3, plot_idx)
 
@@ -232,33 +259,26 @@ println("="^60)
 println("\nTrue Distribution:")
 println("  Mean x₁: ", @sprintf("%.4f", mean(true_samples[1, :])))
 println("  Mean x₂: ", @sprintf("%.4f", mean(true_samples[2, :])))
-println("  Std  x₁: ", @sprintf("%.4f", std(true_samples[1, :])))
-println("  Std  x₂: ", @sprintf("%.4f", std(true_samples[2, :])))
+println("  Std x₁:  ", @sprintf("%.4f", std(true_samples[1, :])))
+println("  Std x₂:  ", @sprintf("%.4f", std(true_samples[2, :])))
 
-println("\nADMM-SVGD Final Distribution:")
+println("\nADMM-SVGD Final Particles:")
 println("  Mean x₁: ", @sprintf("%.4f", mean(particles[1, :])))
 println("  Mean x₂: ", @sprintf("%.4f", mean(particles[2, :])))
-println("  Std  x₁: ", @sprintf("%.4f", std(particles[1, :])))
-println("  Std  x₂: ", @sprintf("%.4f", std(particles[2, :])))
+println("  Std x₁:  ", @sprintf("%.4f", std(particles[1, :])))
+println("  Std x₂:  ", @sprintf("%.4f", std(particles[2, :])))
 
-println("\nAbsolute Errors:")
-println("  Mean x₁: ", @sprintf("%.4f", abs(mean(particles[1, :]) - mean(true_samples[1, :]))))
-println("  Mean x₂: ", @sprintf("%.4f", abs(mean(particles[2, :]) - mean(true_samples[2, :]))))
-println("  Std  x₁: ", @sprintf("%.4f", abs(std(particles[1, :]) - std(true_samples[1, :]))))
-println("  Std  x₂: ", @sprintf("%.4f", abs(std(particles[2, :]) - std(true_samples[2, :]))))
-
-println("\nFinal Constraint Violation:")
-println("  Mean |z - x₁²|: ", @sprintf("%.6f", history["constraint_violations"][end]))
-
-println("\nLog-PDF Statistics:")
-if haskey(results, "final_logpdf") && haskey(results, "true_logpdf")
-    println("  ADMM-SVGD mean: ", @sprintf("%.4f", mean(results["final_logpdf"])))
-    println("  True samples mean: ", @sprintf("%.4f", mean(results["true_logpdf"])))
-    println("  Difference: ", @sprintf("%.4f", mean(results["true_logpdf"]) - mean(results["final_logpdf"])))
-end
+# Compute final constraint residual
+x1_final = particles[1, :]
+z_final = results["z"]
+final_constraint_residual = mean(abs.(z_final .- x1_final .^ 2))
+println("\nConstraint Satisfaction:")
+println("  Final mean |z - x₁²|: ", @sprintf("%.6e", final_constraint_residual))
+println("  Max |z - x₁²|: ", @sprintf("%.6e", maximum(abs.(z_final .- x1_final .^ 2))))
 
 println("\n" * "="^60)
-println("All visualizations saved to: ", save_path)
+println("Visualization complete!")
+println("Plots saved to: ", save_path)
 println("="^60)
 
 upload_to_dropbox(args["sim_name"])
