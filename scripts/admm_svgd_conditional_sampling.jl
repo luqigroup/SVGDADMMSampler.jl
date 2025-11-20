@@ -146,7 +146,7 @@ for j = 1:test_num
     # Update multipliers: ε ← ε + (x₁² - z)
     function update_multiplier_fn(s)
         x1 = s.particles[1, :]
-        s.ε .+= (x1 .^ 2) .- s.z
+        s.ε .+= s.μ * ((x1 .^ 2) .- s.z)
     end
 
     # Run sampling with progress bar
