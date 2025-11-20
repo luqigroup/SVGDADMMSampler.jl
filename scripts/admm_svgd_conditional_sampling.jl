@@ -143,7 +143,7 @@ for j = 1:test_num
         return vcat((-dL_dx1)', (-dL_dx2)')
     end
 
-    # Update multipliers: ε ← ε + (x₁² - z)
+    # Update multipliers: ε ← ε + μ(x₁² - z)
     function update_multiplier_fn(s)
         x1 = s.particles[1, :]
         s.ε .+= s.μ * ((x1 .^ 2) .- s.z)

@@ -23,8 +23,8 @@ Pkg.build("PyCall")
 
 ### Install the package
 
-```julia
-] add /path/to/RosSVGDADMMSampler.jl
+```bash
+julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
 
 ## Running Examples

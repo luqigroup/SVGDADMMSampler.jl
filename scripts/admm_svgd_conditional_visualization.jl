@@ -17,7 +17,7 @@ using ProgressMeter
 font_prop = set_plot_configs()[1]
 
 # Read configuration
-args = read_config("admm_svgd_conditional_visualization.json")
+args = read_config("admm_svgd_conditional_sampling.json")
 args = parse_input_args(args)
 
 println("="^60)
@@ -122,7 +122,7 @@ ax.legend(loc = "upper right")
 ax.set_title("Prior distribution (Rosenbrock)")
 wsave(joinpath(save_path, "prior.png"), fig)
 close(fig)
-println("  ✓ Saved prior.png")
+println("Saved prior.png")
 
 # ============================================================================
 # Figure 2: Data distribution (noisy observations)
@@ -150,7 +150,7 @@ ax.set_xlabel(L"$y_1$")
 ax.set_title("Data distribution (noisy)")
 wsave(joinpath(save_path, "data.png"), fig)
 close(fig)
-println("  ✓ Saved data.png")
+println("Saved data.png")
 
 # ============================================================================
 # Figure 3: ADMM-SVGD posterior samples
@@ -177,7 +177,7 @@ ax.set_title("ADMM-SVGD Conditional Posterior")
 ax.legend()
 wsave(joinpath(save_path, "admm-svgd-posterior.png"), fig)
 close(fig)
-println("  ✓ Saved admm-svgd-posterior.png")
+println("Saved admm-svgd-posterior.png")
 
 # ============================================================================
 # Figure 4: MCMC posterior samples (if computed)
@@ -204,7 +204,7 @@ ax.set_title("MCMC Posterior")
 ax.legend()
 wsave(joinpath(save_path, "mcmc-posterior.png"), fig)
 close(fig)
-println("  ✓ Saved mcmc-posterior.png")
+println("Saved mcmc-posterior.png")
 
 # ============================================================================
 # Figure 5: Q-Q plots for each test instance
@@ -252,7 +252,7 @@ for j = 1:test_num
     wsave(joinpath(save_path, "qq2-$j.png"), fig)
     close(fig)
 end
-println("  ✓ Saved Q-Q plots for all instances")
+println("Saved Q-Q plots for all instances")
 
 # ============================================================================
 # Figure 6: Individual conditional posteriors (one per test instance)
@@ -292,7 +292,7 @@ for j = 1:test_num
     wsave(joinpath(save_path, "conditional-$j.png"), fig)
     close(fig)
 end
-println("  ✓ Saved individual conditional plots")
+println("Saved individual conditional plots")
 
 # ============================================================================
 # Figure 7: Summary statistics comparison
@@ -334,7 +334,7 @@ grid(true, alpha = 0.3, axis = "y")
 tight_layout()
 wsave(joinpath(save_path, "summary-statistics.png"), fig)
 close(fig)
-println("  ✓ Saved summary-statistics.png")
+println("Saved summary-statistics.png")
 
 # ============================================================================
 # Print summary statistics

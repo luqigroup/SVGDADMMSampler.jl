@@ -14,7 +14,7 @@ using Printf
 font_prop = set_plot_configs()[1]
 
 # Read configuration from JSON file
-args = read_config("admm_svgd_visualization.json")
+args = read_config("admm_svgd_sampling.json")
 args = parse_input_args(args)
 
 println("="^60)
@@ -90,7 +90,7 @@ tight_layout()
 # Save figure
 wsave(joinpath(save_path, "final_distribution.png"), fig1)
 close(fig1)
-println("  ✓ Saved final_distribution.png")
+println("Saved final_distribution.png")
 
 # ============================================================================
 # Figure 2: Marginal distributions comparison
@@ -126,7 +126,7 @@ tight_layout()
 # Save figure
 wsave(joinpath(save_path, "marginal_distributions.png"), fig2)
 close(fig2)
-println("  ✓ Saved marginal_distributions.png")
+println("Saved marginal_distributions.png")
 
 # ============================================================================
 # Figure 3: Convergence statistics over iterations
@@ -208,7 +208,7 @@ grid(true, alpha=0.3)
 tight_layout()
 wsave(joinpath(save_path, "convergence_statistics.png"), fig3)
 close(fig3)
-println("  ✓ Saved convergence_statistics.png")
+println("Saved convergence_statistics.png")
 
 # ============================================================================
 # Figure 4: Evolution animation frames (selected iterations)
@@ -247,7 +247,7 @@ suptitle("ADMM-SVGD Evolution Over Iterations", fontsize=14)
 tight_layout()
 wsave(joinpath(save_path, "evolution_frames.png"), fig4)
 close(fig4)
-println("  ✓ Saved evolution_frames.png")
+println("Saved evolution_frames.png")
 
 # ============================================================================
 # Print summary statistics
