@@ -74,8 +74,14 @@ println("    Mean y₂: ", mean(Y_test[1, 1, 2, :]))
 println("    Std y₁:  ", std(Y_test[1, 1, 1, :]))
 println("    Std y₂:  ", std(Y_test[1, 1, 2, :]))
 
-# Storage for posterior samples
+# Storage for posterior samples and convergence history
 X_post = zeros(Float32, 1, 1, 2, n_particles, test_num)
+n_iters = args["n_iterations"]
+hist_constraint_res = zeros(Float32, n_iters, test_num)
+hist_logpdf = zeros(Float32, n_iters, test_num)
+hist_bandwidth = zeros(Float32, n_iters, test_num)
+hist_mean = zeros(Float32, n_iters, 2, test_num)
+hist_std = zeros(Float32, n_iters, 2, test_num)
 
 # Run ADMM-SVGD for each fixed observation
 println("\nRunning ADMM-SVGD conditional sampling...")
@@ -168,6 +174,15 @@ for j = 1:test_num
         x1 = sampler.particles[1, :]
         constraint_res = mean(abs.(sampler.z .- x1 .^ 2))
 
+        # Save convergence history
+        hist_constraint_res[iter, j] = constraint_res
+        hist_logpdf[iter, j] = avg_logpdf
+        hist_bandwidth[iter, j] = sampler.h
+        hist_mean[iter, 1, j] = mean(sampler.particles[1, :])
+        hist_mean[iter, 2, j] = mean(sampler.particles[2, :])
+        hist_std[iter, 1, j] = std(sampler.particles[1, :])
+        hist_std[iter, 2, j] = std(sampler.particles[2, :])
+
         # Update progress
         next!(prog; showvalues = [
             (:iteration, iter),
@@ -216,6 +231,11 @@ save_dict = merge(
         "X_fixed" => X_fixed,
         "Y_fixed" => Y_fixed,
         "X_post" => X_post,
+        "hist_constraint_res" => hist_constraint_res,
+        "hist_logpdf" => hist_logpdf,
+        "hist_bandwidth" => hist_bandwidth,
+        "hist_mean" => hist_mean,
+        "hist_std" => hist_std,
     ),
 )
 

@@ -44,6 +44,7 @@ include("./objectives/exact_likelihood.jl")
 # Sampling
 include("./sampling/pSGLD.jl")
 include("./sampling/sample.jl")
+include("./sampling/mala.jl")
 include("./sampling/admm_svgd.jl")
 
 end
