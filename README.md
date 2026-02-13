@@ -1,28 +1,6 @@
 # SVGDADMMSampler.jl
 
-A Julia package implementing Stein Variational Gradient Descent (SVGD)
-with ADMM constraints for Bayesian inference and sampling. The package
-also includes normalizing flow and Lagevin dynamics baselines for comparison.
-
-## Sampling Methods
-
-#### ADMM-SVGD (`src/sampling/admm_svgd.jl`)
-
-The core algorithm combining Stein Variational Gradient Descent with the
-Alternating Direction Method of Multipliers for constrained posterior
-sampling. The method maintains a set of particles that collectively
-approximate the target posterior while satisfying observational
-constraints through the ADMM framework.
-
-#### pSGLD (`src/sampling/pSGLD.jl`)
-
-Preconditioned Stochastic Gradient Langevin Dynamics for MCMC-based sampling, used as a baseline for comparison with SVGD methods.
-
-### Normalizing Flow Samplers
-
-The package includes conditional and unconditional normalizing flow models (Glow architecture) for comparison with SVGD methods:
-- **NetworkGlow**: Unconditional generative model trained via maximum likelihood
-- **NetworkConditionalGlow**: Conditional generative model for amortized posterior inference
+Companion code for *"Dual-space posterior sampling for Bayesian inference in constrained inverse problems"*. This package implements Stein Variational Gradient Descent (SVGD) with ADMM constraints for Bayesian inference and sampling.
 
 ## Installation
 
@@ -47,59 +25,74 @@ Pkg.build("PyCall")
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
 
-## Scripts
+## Reproducing the Results
 
-### SVGD-Based Scripts
+### Rosenbrock Conditional Posterior Sampling
 
-#### ADMM-SVGD Sampling
-- **`admm_svgd_sampling.jl`**: Runs ADMM-SVGD to sample from constrained posteriors, combining prior knowledge with data-fidelity constraints
-- **`admm_svgd_conditional_sampling.jl`**: Performs conditional ADMM-SVGD sampling for multiple test observations
-- **`admm_svgd_visualization.jl`**: Visualizes ADMM-SVGD sampling results including particle evolution and constraint satisfaction
-- **`admm_svgd_conditional_visualization.jl`**: Generates visualizations for conditional ADMM-SVGD experiments
+The Rosenbrock example demonstrates conditional posterior inference $p(\mathbf{x} \mid \mathbf{y})$ where the prior follows the Rosenbrock distribution and observations are $\mathbf{y} = \mathbf{x} + \boldsymbol{\eta}$ with Gaussian noise. We compare ADMM-SVGD (which decomposes the posterior via an auxiliary constraint $z = x_1^2$) against standard SVGD (which uses the direct posterior gradient).
 
-#### Pure SVGD
-- **`pure_svgd_sampling.jl`**: Runs standard SVGD without ADMM constraints for unconditional prior sampling
-- **`pure_svgd_visualization.jl`**: Creates visualizations for pure SVGD results, including convergence diagnostics
+Configuration files are in `config/`. Key parameters:
 
-### Normalizing Flow Scripts
+| Parameter | ADMM-SVGD | Standard SVGD |
+|-----------|-----------|---------------|
+| Particles | 1000 | 1000 |
+| Step size ($\eta$) | 0.15 | 0.05 |
+| Iterations | 2500 | 5000 |
+| Penalty ($\mu$) | 1.0 | -- |
 
-#### Training
-- **`rosenbrock_training.jl`**: Trains an unconditional Glow model on Rosenbrock distribution via maximum likelihood
-- **`rosenbrock_amortized_training.jl`**: Trains a conditional Glow model for amortized inference given observations
+**Step 1: Run ADMM-SVGD conditional sampling.** This generates the test instances (X_fixed, Y_fixed) and runs ADMM-SVGD for all five observations.
 
-#### Sampling
-- **`rosenbrock_sampling.jl`**: Samples from trained unconditional Glow model
-- **`rosenbrock_amortized_sampling.jl`**: Performs conditional sampling from trained amortized Glow model and compares with MCMC baselines
+```bash
+julia --project=. scripts/admm_svgd_conditional_sampling.jl
+```
 
-## Running Examples
+**Step 2: Run standard SVGD conditional sampling.** This loads the same test instances from Step 1 and runs plain SVGD with the direct posterior gradient.
 
-### SVGD-Based Sampling
+```bash
+julia --project=. scripts/svgd_conditional_sampling.jl
+```
 
-Run ADMM-SVGD for constrained sampling:
+**Step 3: Generate paper figures.** This produces all comparison figures: prior, data, ADMM-SVGD posteriors, standard SVGD posteriors, combined overlay, convergence diagnostics, and Q-Q plots.
 
-```julia
+```bash
+julia --project=. scripts/admm_svgd_conditional_paper_figures.jl
+```
+
+Figures are saved to `plots/` and to the paper figures directory.
+
+### Rosenbrock Unconditional Sampling
+
+Sample from the Rosenbrock distribution using ADMM-SVGD and visualize the results:
+
+```bash
 julia --project=. scripts/admm_svgd_sampling.jl
 julia --project=. scripts/admm_svgd_visualization.jl
 ```
 
-Run pure SVGD for unconditional sampling:
+Optionally, run pure SVGD (without ADMM) for comparison:
 
-```julia
+```bash
 julia --project=. scripts/pure_svgd_sampling.jl
 julia --project=. scripts/pure_svgd_visualization.jl
 ```
 
-### Normalizing Flow Baselines
+## Project Structure
 
-Train and sample from flow models:
-```julia
-# Unconditional model
-julia --project=. scripts/rosenbrock_training.jl
-julia --project=. scripts/rosenbrock_sampling.jl
-
-# Conditional (amortized) model
-julia --project=. scripts/rosenbrock_amortized_training.jl
-julia --project=. scripts/rosenbrock_amortized_sampling.jl
+```
+config/                          # Configuration files (JSON)
+  admm_svgd_conditional_sampling.json   # ADMM-SVGD parameters
+  svgd_conditional_sampling.json        # Standard SVGD parameters
+src/
+  SVGDADMMSampler.jl             # Main module
+  sampling/
+    admm_svgd.jl                 # ADMMSVGDSampler, step!, compute_bandwidth, svgd_update!
+    sample.jl                    # MCMC sampler (MALA)
+scripts/
+  admm_svgd_conditional_sampling.jl     # ADMM-SVGD conditional sampling
+  svgd_conditional_sampling.jl          # Standard SVGD conditional sampling
+  admm_svgd_conditional_paper_figures.jl  # Generate all paper figures
+data/                            # Saved results (JLD2, managed by DrWatson)
+plots/                           # Generated figures
 ```
 
 ## Author

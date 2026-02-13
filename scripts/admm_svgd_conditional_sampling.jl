@@ -12,7 +12,7 @@ using JLD2
 using LinearAlgebra
 
 # Random seed
-Random.seed!(11)
+Random.seed!(7)
 
 # Read configuration
 args = read_config("admm_svgd_conditional_sampling.json")

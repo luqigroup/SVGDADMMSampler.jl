@@ -11,7 +11,6 @@ using PyPlot
 using Seaborn
 using Printf
 using LinearAlgebra
-using ProgressMeter
 
 # Set plot configurations
 font_prop, sfmt = set_plot_configs(; fontsize = 10)
@@ -21,7 +20,7 @@ args = read_config("admm_svgd_conditional_sampling.json")
 args = parse_input_args(args)
 
 # Load saved results
-println("Loading results...")
+println("Loading ADMM-SVGD results...")
 loaded_keys = load_experiment(
     args,
     [
@@ -45,6 +44,27 @@ hist_std = loaded_keys["hist_std"]
 n_particles = size(X_post, 4)
 n_iters = size(hist_constraint_res, 1)
 
+# Load plain SVGD results
+println("Loading plain SVGD results...")
+svgd_args = read_config("svgd_conditional_sampling.json")
+svgd_args = parse_input_args(svgd_args)
+
+svgd_keys = load_experiment(
+    svgd_args,
+    [
+        "X_post", "hist_logpdf", "hist_bandwidth",
+        "hist_mean", "hist_std",
+    ],
+)
+
+X_post_plain = svgd_keys["X_post"]
+hist_logpdf_plain = svgd_keys["hist_logpdf"]
+hist_bandwidth_plain = svgd_keys["hist_bandwidth"]
+hist_mean_plain = svgd_keys["hist_mean"]
+hist_std_plain = svgd_keys["hist_std"]
+
+n_iters_plain = size(hist_logpdf_plain, 1)
+
 # Select 4 instances that fit within the view [-3,3]×[-2.5,7]
 # Instance 4 (true≈[3.1, 9.6]) is outside the view — skip it
 inst_idx = [1, 2, 3, 5]
@@ -52,7 +72,8 @@ n_inst = length(inst_idx)
 
 println("  Selected instances: $inst_idx (skipping instance 4, outside view)")
 println("  Posterior samples per instance: $n_particles")
-println("  Iterations: $n_iters")
+println("  ADMM-SVGD iterations: $n_iters")
+println("  Plain SVGD iterations: $n_iters_plain")
 
 # Create Rosenbrock distribution for reference
 RB_dist = RosenbrockDistribution(args["mu_rb"], args["a"])
@@ -72,54 +93,13 @@ println("  Plot directory: $plot_save")
 # Color palette
 c_prior = "#555555"
 c_svgd = "#D68D96"
-c_mala = "#819FB3"
+c_plain_svgd = "#4E9A6D"
 c_obs = "#2C3E50"
 c_true = "#E74C3C"
 
 # Instance colors for convergence/Q-Q
 inst_colors = ["#E24A33", "#348ABD", "#988ED5", "#8EBA42"]
 inst_labels = ["Instance $k" for k = 1:n_inst]
-
-# ==========================================================================
-# Run MALA for all selected instances (needed for combined plots and Q-Q)
-# ==========================================================================
-println("\nRunning MALA sampling...")
-
-σ² = Float32(args["sigma"]^2)
-a_rb = Float32(RB_dist.a)
-μ_rb = Float32(RB_dist.μ)
-
-function nlogpost(x, y1, y2)
-    data = ((x[1] - y1)^2 + (x[2] - y2)^2) / (2 * σ²)
-    prior = a_rb * (x[1] - μ_rb)^2 + (x[2] - x[1]^2)^2
-    return data + prior
-end
-
-function grad_nlogpost(x, y1, y2)
-    x1, x2 = x[1], x[2]
-    dx1 = (x1 - y1) / σ² + 2 * a_rb * (x1 - μ_rb) - 4 * x1 * (x2 - x1^2)
-    dx2 = (x2 - y2) / σ² + 2 * (x2 - x1^2)
-    return Float32[dx1, dx2]
-end
-
-n_mcmc = n_particles  # Match SVGD sample count
-max_itr = 50000
-X_mala = zeros(Float32, 2, n_mcmc, n_inst)
-
-prog = Progress(n_inst; desc = "MALA sampling: ")
-for (k, j) in enumerate(inst_idx)
-    y1_j = Float32(Y_fixed[1, 1, 1, j])
-    y2_j = Float32(Y_fixed[1, 1, 2, j])
-    U(x) = nlogpost(x, y1_j, y2_j)
-    ∇U(x) = grad_nlogpost(x, y1_j, y2_j)
-    samples = MALA_sampler(
-        max_itr, randn(Float32, 2), U, ∇U;
-        τ = 3.0f-2, thinning = 5, burn_in_frac = 0.5f0,
-    )
-    n_avail = size(samples, 2)
-    X_mala[:, :, k] = samples[:, max(1, n_avail - n_mcmc + 1):n_avail]
-    next!(prog)
-end
 
 # ==========================================================================
 # Figure 1a: Prior distribution
@@ -163,7 +143,7 @@ scatter(
 for (k, j) in enumerate(inst_idx)
     scatter(
         [Y_fixed[1, 1, 1, j]], [Y_fixed[1, 1, 2, j]],
-        s = 60.0, color = c_mala, marker = "v",
+        s = 60.0, color = c_obs, marker = "v",
         edgecolors = "black", linewidths = 0.8, zorder = 10,
     )
 end
@@ -192,7 +172,7 @@ for (k, j) in enumerate(inst_idx)
         s = 0.3, color = c_prior, alpha = 0.25, rasterized = true,
     )
 
-    # SVGD posterior samples
+    # ADMM-SVGD posterior samples
     ax.scatter(
         X_post[1, 1, 1, :, j], X_post[1, 1, 2, :, j],
         s = 1.5, color = c_svgd, alpha = 0.3, rasterized = true,
@@ -228,9 +208,9 @@ end
 close(fig)
 
 # ==========================================================================
-# Figure 3: MALA conditional posteriors (2×2 panel)
+# Figure 2b: Plain SVGD conditional posteriors (2×2 panel)
 # ==========================================================================
-println("Generating Figure 3: MALA conditional posteriors (2×2)...")
+println("Generating Figure 2b: Plain SVGD conditional posteriors (2×2)...")
 
 fig = figure(figsize = (8, 8))
 for (k, j) in enumerate(inst_idx)
@@ -242,10 +222,10 @@ for (k, j) in enumerate(inst_idx)
         s = 0.3, color = c_prior, alpha = 0.25, rasterized = true,
     )
 
-    # MALA posterior samples
+    # Plain SVGD posterior samples
     ax.scatter(
-        X_mala[1, :, k], X_mala[2, :, k],
-        s = 1.5, color = c_mala, alpha = 0.3, rasterized = true,
+        X_post_plain[1, 1, 1, :, j], X_post_plain[1, 1, 2, :, j],
+        s = 1.5, color = c_plain_svgd, alpha = 0.3, rasterized = true,
     )
 
     # Observed value
@@ -270,17 +250,17 @@ for (k, j) in enumerate(inst_idx)
 end
 tight_layout()
 for path in [
-    joinpath(paper_figs, "mala-posteriors.png"),
-    joinpath(plot_save, "mala-posteriors.png"),
+    joinpath(paper_figs, "plain-svgd-posteriors.png"),
+    joinpath(plot_save, "plain-svgd-posteriors.png"),
 ]
     wsave(path, fig)
 end
 close(fig)
 
 # ==========================================================================
-# Figure 4: Combined SVGD + MALA posteriors (2×2 panel)
+# Figure 3: Combined ADMM-SVGD + plain SVGD posteriors (2×2 panel)
 # ==========================================================================
-println("Generating Figure 4: Combined SVGD + MALA posteriors (2×2)...")
+println("Generating Figure 3: Combined ADMM-SVGD + SVGD posteriors (2×2)...")
 
 fig = figure(figsize = (8, 8))
 for (k, j) in enumerate(inst_idx)
@@ -292,18 +272,18 @@ for (k, j) in enumerate(inst_idx)
         s = 0.3, color = c_prior, alpha = 0.15, rasterized = true,
     )
 
-    # MALA posterior samples
-    ax.scatter(
-        X_mala[1, :, k], X_mala[2, :, k],
-        s = 1.5, color = c_mala, alpha = 0.25, rasterized = true,
-        label = k == 1 ? "MALA" : nothing,
-    )
-
-    # SVGD posterior samples
+    # ADMM-SVGD posterior samples
     ax.scatter(
         X_post[1, 1, 1, :, j], X_post[1, 1, 2, :, j],
         s = 1.5, color = c_svgd, alpha = 0.25, rasterized = true,
         label = k == 1 ? "ADMM-SVGD" : nothing,
+    )
+
+    # Plain SVGD posterior samples
+    ax.scatter(
+        X_post_plain[1, 1, 1, :, j], X_post_plain[1, 1, 2, :, j],
+        s = 1.5, color = c_plain_svgd, alpha = 0.25, rasterized = true,
+        label = k == 1 ? "SVGD" : nothing,
     )
 
     # Observed value
@@ -334,17 +314,17 @@ handles, labels = fig.axes[1].get_legend_handles_labels()
 fig.legend(handles, labels, loc = "lower center", ncol = 4, fontsize = 9, frameon = false)
 tight_layout(rect = [0, 0.04, 1, 1])
 for path in [
-    joinpath(paper_figs, "combined-posteriors.png"),
-    joinpath(plot_save, "combined-posteriors.png"),
+    joinpath(paper_figs, "combined-all-posteriors.png"),
+    joinpath(plot_save, "combined-all-posteriors.png"),
 ]
     wsave(path, fig)
 end
 close(fig)
 
 # ==========================================================================
-# Figure 5: Convergence diagnostics (6-panel, 4 instances)
+# Figure 4: ADMM-SVGD Convergence diagnostics (6-panel, 4 instances)
 # ==========================================================================
-println("Generating Figure 5: Convergence diagnostics...")
+println("Generating Figure 4: ADMM-SVGD Convergence diagnostics...")
 
 iters = 1:n_iters
 
@@ -430,9 +410,88 @@ end
 close(fig)
 
 # ==========================================================================
-# Figure 6: Q-Q plots vs MALA (2×4 grid for 4 instances)
+# Figure 4b: Plain SVGD convergence diagnostics (5-panel, no constraint)
 # ==========================================================================
-println("Generating Figure 6: Q-Q plots vs MALA...")
+println("Generating Figure 4b: Plain SVGD convergence diagnostics...")
+
+iters_plain = 1:n_iters_plain
+
+fig = figure(figsize = (12, 6.5))
+
+# Panel (a): Average log-posterior
+ax1 = fig.add_subplot(2, 3, 1)
+for (k, j) in enumerate(inst_idx)
+    ax1.plot(collect(iters_plain), Vector{Float64}(hist_logpdf_plain[:, j]), color = inst_colors[k], alpha = 0.8, lw = 1.2)
+end
+ax1.set_xlabel("Iteration")
+ax1.set_ylabel(L"$\langle \log p(\mathbf{x}|\mathbf{y}) \rangle$")
+ax1.set_title("(a) Avg. log-posterior")
+
+# Panel (b): Bandwidth
+ax2 = fig.add_subplot(2, 3, 2)
+for (k, j) in enumerate(inst_idx)
+    ax2.plot(collect(iters_plain), Vector{Float64}(hist_bandwidth_plain[:, j]), color = inst_colors[k], alpha = 0.8, lw = 1.2)
+end
+ax2.set_xlabel("Iteration")
+ax2.set_ylabel(L"$h$")
+ax2.set_title("(b) Kernel bandwidth")
+
+# Panel (c): Particle mean x₁
+ax3 = fig.add_subplot(2, 3, 3)
+for (k, j) in enumerate(inst_idx)
+    ax3.plot(collect(iters_plain), Vector{Float64}(hist_mean_plain[:, 1, j]), color = inst_colors[k], alpha = 0.8, lw = 1.2)
+    ax3.axhline(
+        y = Float64(X_fixed[1, 1, 1, j]), color = inst_colors[k],
+        linestyle = ":", alpha = 0.6, lw = 1.0,
+    )
+end
+ax3.set_xlabel("Iteration")
+ax3.set_ylabel(L"$\langle x_1 \rangle$")
+ax3.set_title(L"(c) Particle mean $x_1$" * " (dotted = true)")
+
+# Panel (d): Particle mean x₂
+ax4 = fig.add_subplot(2, 3, 4)
+for (k, j) in enumerate(inst_idx)
+    ax4.plot(collect(iters_plain), Vector{Float64}(hist_mean_plain[:, 2, j]), color = inst_colors[k], alpha = 0.8, lw = 1.2)
+    ax4.axhline(
+        y = Float64(X_fixed[1, 1, 2, j]), color = inst_colors[k],
+        linestyle = ":", alpha = 0.6, lw = 1.0,
+    )
+end
+ax4.set_xlabel("Iteration")
+ax4.set_ylabel(L"$\langle x_2 \rangle$")
+ax4.set_title(L"(d) Particle mean $x_2$" * " (dotted = true)")
+
+# Panel (e): Posterior std (x₁ solid, x₂ dashed)
+ax5 = fig.add_subplot(2, 3, 5)
+for (k, j) in enumerate(inst_idx)
+    ax5.plot(collect(iters_plain), Vector{Float64}(hist_std_plain[:, 1, j]), color = inst_colors[k], alpha = 0.8, lw = 1.2)
+    ax5.plot(collect(iters_plain), Vector{Float64}(hist_std_plain[:, 2, j]), color = inst_colors[k], alpha = 0.8, lw = 1.2, linestyle = "--")
+end
+ax5.plot([], [], color = "gray", lw = 1.2, linestyle = "-", label = L"$\sigma_{x_1}$")
+ax5.plot([], [], color = "gray", lw = 1.2, linestyle = "--", label = L"$\sigma_{x_2}$")
+ax5.set_xlabel("Iteration")
+ax5.set_ylabel(L"$\sigma$")
+ax5.set_title("(e) Posterior std. dev.")
+ax5.legend(fontsize = 8, loc = "upper right")
+
+# Shared legend for instances
+handles = [matplotlib.patches.Patch(facecolor = inst_colors[k], label = inst_labels[k]) for k = 1:n_inst]
+fig.legend(handles = handles, loc = "lower center", ncol = n_inst, fontsize = 9, frameon = false)
+
+tight_layout(rect = [0, 0.05, 1, 1])
+for path in [
+    joinpath(paper_figs, "convergence-plain-svgd.png"),
+    joinpath(plot_save, "convergence-plain-svgd.png"),
+]
+    wsave(path, fig)
+end
+close(fig)
+
+# ==========================================================================
+# Figure 5: Q-Q plots SVGD vs ADMM-SVGD (2×4 grid for 4 instances)
+# ==========================================================================
+println("Generating Figure 5: Q-Q plots SVGD vs ADMM-SVGD...")
 
 dq = 1.0f-2
 fig, axes = subplots(2, n_inst; figsize = (3 * n_inst, 6))
@@ -440,21 +499,21 @@ fig, axes = subplots(2, n_inst; figsize = (3 * n_inst, 6))
 for (k, j) in enumerate(inst_idx)
     for (row, dim, label) in [(1, 1, L"$x_1$"), (2, 2, L"$x_2$")]
         local ax = axes[row, k]
-        mcmc_q = quantile(vec(X_mala[dim, :, k]), dq:dq:1-dq)
         admm_q = quantile(vec(X_post[1, 1, dim, :, j]), dq:dq:1-dq)
-        ax.plot(mcmc_q, admm_q, "o", ms = 2.0, color = inst_colors[k], alpha = 0.6)
+        svgd_q = quantile(vec(X_post_plain[1, 1, dim, :, j]), dq:dq:1-dq)
+        ax.plot(admm_q, svgd_q, "o", ms = 2.0, color = inst_colors[k], alpha = 0.6)
         ref = range(
-            min(minimum(mcmc_q), minimum(admm_q)),
-            max(maximum(mcmc_q), maximum(admm_q)),
+            min(minimum(admm_q), minimum(svgd_q)),
+            max(maximum(admm_q), maximum(svgd_q)),
             length = 100,
         )
         ax.plot(ref, ref, "k-", lw = 0.8, alpha = 0.5)
         ax.set_aspect("equal")
         if row == 2
-            ax.set_xlabel("MALA")
+            ax.set_xlabel("ADMM-SVGD")
         end
         if k == 1
-            ax.set_ylabel("ADMM-SVGD")
+            ax.set_ylabel("SVGD")
         end
         if row == 1
             ax.set_title("Inst. $k ($label)")
@@ -465,8 +524,8 @@ for (k, j) in enumerate(inst_idx)
 end
 tight_layout()
 for path in [
-    joinpath(paper_figs, "qq-plots.png"),
-    joinpath(plot_save, "qq-plots.png"),
+    joinpath(paper_figs, "qq-plots-svgd-vs-admm.png"),
+    joinpath(plot_save, "qq-plots-svgd-vs-admm.png"),
 ]
     wsave(path, fig)
 end
@@ -476,7 +535,7 @@ close(fig)
 # Print summary
 # ==========================================================================
 println("\n" * "="^60)
-println("Summary Statistics (4 selected instances)")
+println("Summary Statistics — ADMM-SVGD (4 selected instances)")
 println("="^60)
 for (k, j) in enumerate(inst_idx)
     mx1 = mean(X_post[1, 1, 1, :, j])
@@ -492,6 +551,24 @@ for (k, j) in enumerate(inst_idx)
         k, j, tx1, tx2, mx1, mx2, sx1, sx2, err, cres,
     )
 end
+
+println("\n" * "="^60)
+println("Summary Statistics — Plain SVGD (4 selected instances)")
+println("="^60)
+for (k, j) in enumerate(inst_idx)
+    mx1 = mean(X_post_plain[1, 1, 1, :, j])
+    mx2 = mean(X_post_plain[1, 1, 2, :, j])
+    sx1 = std(X_post_plain[1, 1, 1, :, j])
+    sx2 = std(X_post_plain[1, 1, 2, :, j])
+    tx1 = X_fixed[1, 1, 1, j]
+    tx2 = X_fixed[1, 1, 2, j]
+    err = sqrt((mx1 - tx1)^2 + (mx2 - tx2)^2)
+    @printf(
+        "  Instance %d (idx=%d): true=[%6.3f,%6.3f] mean=[%6.3f,%6.3f] std=[%.3f,%.3f] err=%.4f\n",
+        k, j, tx1, tx2, mx1, mx2, sx1, sx2, err,
+    )
+end
+
 println("\nFigures saved to:")
 println("  Paper: $paper_figs")
 println("  Plots: $plot_save")
