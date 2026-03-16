@@ -1,0 +1,20 @@
+{
+  "sim_name": "wavefield_kernel_helmholtz1d",
+  "N": 50,
+  "N_p": 30,
+  "n_iterations": 2000,
+  "eta": 0.002,
+  "freq": 5.0,
+  "n_src": 5,
+  "n_rec": 30,
+  "n_pml": 5,
+  "sigma": 0.02,
+  "v_bg": 2.0,
+  "anomaly_center": 0.5,
+  "anomaly_width": 0.15,
+  "anomaly_dv": -0.15,
+  "corr_length": 0.1,
+  "v_prior_std": 0.3,
+  "L": 1.0,
+  "seed": 42
+}

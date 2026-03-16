@@ -1,0 +1,12 @@
+{
+  "sim_name": "wavefield_kernel_rosenbrock",
+  "n_particles": 1000,
+  "n_iterations": 2000,
+  "mu_penalty": 1.0,
+  "eta": 0.5,
+  "h": null,
+  "mu_rb": 0.0,
+  "a": 1.0,
+  "alpha": 1.0,
+  "save_every": 10
+}

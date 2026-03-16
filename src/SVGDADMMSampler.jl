@@ -46,6 +46,8 @@ include("./sampling/pSGLD.jl")
 include("./sampling/sample.jl")
 include("./sampling/mala.jl")
 include("./sampling/admm_svgd.jl")
+include("./sampling/wavefield_kernel.jl")
+include("./helmholtz1d.jl")
 
 end
 
