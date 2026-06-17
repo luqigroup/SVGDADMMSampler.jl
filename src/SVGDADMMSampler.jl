@@ -46,6 +46,10 @@ include("./sampling/pSGLD.jl")
 include("./sampling/sample.jl")
 include("./sampling/mala.jl")
 include("./sampling/admm_svgd.jl")
+include("./sampling/conditional_inference.jl")
+
+# Diagnostics
+include("./diagnostics/calibration.jl")
 
 end
 

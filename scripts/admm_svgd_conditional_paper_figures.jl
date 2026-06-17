@@ -26,7 +26,7 @@ loaded_keys = load_experiment(
     [
         "X_test", "Y_test", "X_fixed", "Y_fixed", "X_post",
         "hist_constraint_res", "hist_logpdf", "hist_bandwidth",
-        "hist_mean", "hist_std",
+        "hist_mean", "hist_std", "hist_multiplier", "hist_penalty",
     ],
 )
 
@@ -40,6 +40,8 @@ hist_logpdf = loaded_keys["hist_logpdf"]
 hist_bandwidth = loaded_keys["hist_bandwidth"]
 hist_mean = loaded_keys["hist_mean"]
 hist_std = loaded_keys["hist_std"]
+hist_multiplier = loaded_keys["hist_multiplier"]
+hist_penalty = loaded_keys["hist_penalty"]
 
 n_particles = size(X_post, 4)
 n_iters = size(hist_constraint_res, 1)
@@ -110,7 +112,7 @@ fig = figure(figsize = (4, 4))
 ax = fig.add_subplot(111)
 scatter(
     X_test[1, 1, 1, :], X_test[1, 1, 2, :],
-    s = 0.3, color = c_prior, alpha = 0.3, rasterized = true,
+    s = 1.0, color = c_prior, alpha = 0.4, rasterized = true,
 )
 for (k, j) in enumerate(inst_idx)
     scatter(
@@ -138,7 +140,7 @@ fig = figure(figsize = (4, 4))
 ax = fig.add_subplot(111)
 scatter(
     Y_test[1, 1, 1, :], Y_test[1, 1, 2, :],
-    s = 0.3, color = c_prior, alpha = 0.3, rasterized = true,
+    s = 1.0, color = c_prior, alpha = 0.4, rasterized = true,
 )
 for (k, j) in enumerate(inst_idx)
     scatter(
@@ -169,13 +171,13 @@ for (k, j) in enumerate(inst_idx)
     # Background: prior samples
     ax.scatter(
         X_test[1, 1, 1, :], X_test[1, 1, 2, :],
-        s = 0.3, color = c_prior, alpha = 0.25, rasterized = true,
+        s = 1.0, color = c_prior, alpha = 0.25, rasterized = true,
     )
 
     # ADMM-SVGD posterior samples
     ax.scatter(
         X_post[1, 1, 1, :, j], X_post[1, 1, 2, :, j],
-        s = 1.5, color = c_svgd, alpha = 0.3, rasterized = true,
+        s = 6.0, color = c_svgd, alpha = 0.4, rasterized = true,
     )
 
     # Observed value
@@ -219,13 +221,13 @@ for (k, j) in enumerate(inst_idx)
     # Background: prior samples
     ax.scatter(
         X_test[1, 1, 1, :], X_test[1, 1, 2, :],
-        s = 0.3, color = c_prior, alpha = 0.25, rasterized = true,
+        s = 1.0, color = c_prior, alpha = 0.25, rasterized = true,
     )
 
     # Plain SVGD posterior samples
     ax.scatter(
         X_post_plain[1, 1, 1, :, j], X_post_plain[1, 1, 2, :, j],
-        s = 1.5, color = c_plain_svgd, alpha = 0.3, rasterized = true,
+        s = 6.0, color = c_plain_svgd, alpha = 0.4, rasterized = true,
     )
 
     # Observed value
@@ -269,20 +271,20 @@ for (k, j) in enumerate(inst_idx)
     # Background: prior samples
     ax.scatter(
         X_test[1, 1, 1, :], X_test[1, 1, 2, :],
-        s = 0.3, color = c_prior, alpha = 0.15, rasterized = true,
+        s = 1.0, color = c_prior, alpha = 0.25, rasterized = true,
     )
 
     # ADMM-SVGD posterior samples
     ax.scatter(
         X_post[1, 1, 1, :, j], X_post[1, 1, 2, :, j],
-        s = 1.5, color = c_svgd, alpha = 0.25, rasterized = true,
+        s = 6.0, color = c_svgd, alpha = 0.35, rasterized = true,
         label = k == 1 ? "ADMM-SVGD" : nothing,
     )
 
     # Plain SVGD posterior samples
     ax.scatter(
         X_post_plain[1, 1, 1, :, j], X_post_plain[1, 1, 2, :, j],
-        s = 1.5, color = c_plain_svgd, alpha = 0.25, rasterized = true,
+        s = 6.0, color = c_plain_svgd, alpha = 0.35, rasterized = true,
         label = k == 1 ? "SVGD" : nothing,
     )
 
@@ -322,16 +324,20 @@ end
 close(fig)
 
 # ==========================================================================
-# Figure 4: ADMM-SVGD Convergence diagnostics (6-panel, 4 instances)
+# Figure 4: ADMM-SVGD Convergence diagnostics (8-panel, 4 instances)
+#   Panels (a)-(c) are the ADMM augmented-Lagrangian diagnostics — constraint
+#   residual, dual variable (multiplier) ε, and quadratic penalty term — showing
+#   how the ADMM components evolve and how the constraint is progressively
+#   enforced. Panels (d)-(h) are the SVGD/posterior diagnostics.
 # ==========================================================================
 println("Generating Figure 4: ADMM-SVGD Convergence diagnostics...")
 
 iters = 1:n_iters
 
-fig = figure(figsize = (12, 6.5))
+fig = figure(figsize = (16, 6.5))
 
 # Panel (a): Constraint residual (log scale)
-ax1 = fig.add_subplot(2, 3, 1)
+ax1 = fig.add_subplot(2, 4, 1)
 for (k, j) in enumerate(inst_idx)
     ax1.semilogy(collect(iters), Vector{Float64}(hist_constraint_res[:, j]), color = inst_colors[k], alpha = 0.8, lw = 1.2)
 end
@@ -339,62 +345,80 @@ ax1.set_xlabel("Iteration")
 ax1.set_ylabel(L"$|z - x_1^2|$")
 ax1.set_title("(a) Constraint residual")
 
-# Panel (b): Average log-posterior
-ax2 = fig.add_subplot(2, 3, 2)
+# Panel (b): Multiplier (dual variable) ε — ensemble mean
+ax2 = fig.add_subplot(2, 4, 2)
 for (k, j) in enumerate(inst_idx)
-    ax2.plot(collect(iters), Vector{Float64}(hist_logpdf[:, j]), color = inst_colors[k], alpha = 0.8, lw = 1.2)
+    ax2.plot(collect(iters), Vector{Float64}(hist_multiplier[:, j]), color = inst_colors[k], alpha = 0.8, lw = 1.2)
 end
 ax2.set_xlabel("Iteration")
-ax2.set_ylabel(L"$\langle \log p(\mathbf{x}|\mathbf{y}) \rangle$")
-ax2.set_title("(b) Avg. log-posterior")
+ax2.set_ylabel(L"$\langle \varepsilon \rangle$")
+ax2.set_title("(b) Multiplier")
 
-# Panel (c): Bandwidth
-ax3 = fig.add_subplot(2, 3, 3)
+# Panel (c): Penalty term (μ/2)(z - x₁²)² — ensemble mean (log scale)
+ax3 = fig.add_subplot(2, 4, 3)
 for (k, j) in enumerate(inst_idx)
-    ax3.plot(collect(iters), Vector{Float64}(hist_bandwidth[:, j]), color = inst_colors[k], alpha = 0.8, lw = 1.2)
+    ax3.semilogy(collect(iters), Vector{Float64}(hist_penalty[:, j]), color = inst_colors[k], alpha = 0.8, lw = 1.2)
 end
 ax3.set_xlabel("Iteration")
-ax3.set_ylabel(L"$h$")
-ax3.set_title("(c) Kernel bandwidth")
+ax3.set_ylabel(L"$\langle \frac{\mu}{2}(z - x_1^2)^2 \rangle$")
+ax3.set_title("(c) Penalty term")
 
-# Panel (d): Particle mean x₁
-ax4 = fig.add_subplot(2, 3, 4)
+# Panel (d): Average log-posterior
+ax4 = fig.add_subplot(2, 4, 4)
 for (k, j) in enumerate(inst_idx)
-    ax4.plot(collect(iters), Vector{Float64}(hist_mean[:, 1, j]), color = inst_colors[k], alpha = 0.8, lw = 1.2)
-    ax4.axhline(
+    ax4.plot(collect(iters), Vector{Float64}(hist_logpdf[:, j]), color = inst_colors[k], alpha = 0.8, lw = 1.2)
+end
+ax4.set_xlabel("Iteration")
+ax4.set_ylabel(L"$\langle \log p(\mathbf{x}|\mathbf{y}) \rangle$")
+ax4.set_title("(d) Avg. log-posterior")
+
+# Panel (e): Bandwidth
+ax5 = fig.add_subplot(2, 4, 5)
+for (k, j) in enumerate(inst_idx)
+    ax5.plot(collect(iters), Vector{Float64}(hist_bandwidth[:, j]), color = inst_colors[k], alpha = 0.8, lw = 1.2)
+end
+ax5.set_xlabel("Iteration")
+ax5.set_ylabel(L"$h$")
+ax5.set_title("(e) Kernel bandwidth")
+
+# Panel (f): Particle mean x₁
+ax6 = fig.add_subplot(2, 4, 6)
+for (k, j) in enumerate(inst_idx)
+    ax6.plot(collect(iters), Vector{Float64}(hist_mean[:, 1, j]), color = inst_colors[k], alpha = 0.8, lw = 1.2)
+    ax6.axhline(
         y = Float64(X_fixed[1, 1, 1, j]), color = inst_colors[k],
         linestyle = ":", alpha = 0.6, lw = 1.0,
     )
 end
-ax4.set_xlabel("Iteration")
-ax4.set_ylabel(L"$\langle x_1 \rangle$")
-ax4.set_title(L"(d) Particle mean $x_1$" * " (dotted = true)")
+ax6.set_xlabel("Iteration")
+ax6.set_ylabel(L"$\langle x_1 \rangle$")
+ax6.set_title(L"(f) Particle mean $x_1$" * " (dotted = true)")
 
-# Panel (e): Particle mean x₂
-ax5 = fig.add_subplot(2, 3, 5)
+# Panel (g): Particle mean x₂
+ax7 = fig.add_subplot(2, 4, 7)
 for (k, j) in enumerate(inst_idx)
-    ax5.plot(collect(iters), Vector{Float64}(hist_mean[:, 2, j]), color = inst_colors[k], alpha = 0.8, lw = 1.2)
-    ax5.axhline(
+    ax7.plot(collect(iters), Vector{Float64}(hist_mean[:, 2, j]), color = inst_colors[k], alpha = 0.8, lw = 1.2)
+    ax7.axhline(
         y = Float64(X_fixed[1, 1, 2, j]), color = inst_colors[k],
         linestyle = ":", alpha = 0.6, lw = 1.0,
     )
 end
-ax5.set_xlabel("Iteration")
-ax5.set_ylabel(L"$\langle x_2 \rangle$")
-ax5.set_title(L"(e) Particle mean $x_2$" * " (dotted = true)")
+ax7.set_xlabel("Iteration")
+ax7.set_ylabel(L"$\langle x_2 \rangle$")
+ax7.set_title(L"(g) Particle mean $x_2$" * " (dotted = true)")
 
-# Panel (f): Posterior std (x₁ solid, x₂ dashed)
-ax6 = fig.add_subplot(2, 3, 6)
+# Panel (h): Posterior std (x₁ solid, x₂ dashed)
+ax8 = fig.add_subplot(2, 4, 8)
 for (k, j) in enumerate(inst_idx)
-    ax6.plot(collect(iters), Vector{Float64}(hist_std[:, 1, j]), color = inst_colors[k], alpha = 0.8, lw = 1.2)
-    ax6.plot(collect(iters), Vector{Float64}(hist_std[:, 2, j]), color = inst_colors[k], alpha = 0.8, lw = 1.2, linestyle = "--")
+    ax8.plot(collect(iters), Vector{Float64}(hist_std[:, 1, j]), color = inst_colors[k], alpha = 0.8, lw = 1.2)
+    ax8.plot(collect(iters), Vector{Float64}(hist_std[:, 2, j]), color = inst_colors[k], alpha = 0.8, lw = 1.2, linestyle = "--")
 end
-ax6.plot([], [], color = "gray", lw = 1.2, linestyle = "-", label = L"$\sigma_{x_1}$")
-ax6.plot([], [], color = "gray", lw = 1.2, linestyle = "--", label = L"$\sigma_{x_2}$")
-ax6.set_xlabel("Iteration")
-ax6.set_ylabel(L"$\sigma$")
-ax6.set_title("(f) Posterior std. dev.")
-ax6.legend(fontsize = 8, loc = "upper right")
+ax8.plot([], [], color = "gray", lw = 1.2, linestyle = "-", label = L"$\sigma_{x_1}$")
+ax8.plot([], [], color = "gray", lw = 1.2, linestyle = "--", label = L"$\sigma_{x_2}$")
+ax8.set_xlabel("Iteration")
+ax8.set_ylabel(L"$\sigma$")
+ax8.set_title("(h) Posterior std. dev.")
+ax8.legend(fontsize = 8, loc = "upper right")
 
 # Shared legend for instances
 handles = [matplotlib.patches.Patch(facecolor = inst_colors[k], label = inst_labels[k]) for k = 1:n_inst]
@@ -405,7 +429,7 @@ for path in [
     joinpath(paper_figs, "convergence.png"),
     joinpath(plot_save, "convergence.png"),
 ]
-    wsave(path, fig)
+    _wsave(path, fig)
 end
 close(fig)
 
@@ -528,6 +552,116 @@ for path in [
     joinpath(plot_save, "qq-plots-svgd-vs-admm.png"),
 ]
     wsave(path, fig)
+end
+close(fig)
+
+# ==========================================================================
+# Figure 6: Analytic true conditional posterior + samples overlay (2×2 panel)
+# ==========================================================================
+# For a fixed observation y, the conditional posterior is
+#   p(x|y) ∝ p(x) p(y|x),  Rosenbrock prior p(x) ∝ exp(-a(x₁-μ₀)² - (x₂-x₁²)²),
+#   Gaussian likelihood y = x + N(0, σ²I)  ⇒  p(y|x) ∝ exp(-‖y-x‖²/(2σ²)).
+# Negative log density (up to an additive constant):
+#   U(x) = a(x₁-μ₀)² + (x₂-x₁²)² + ‖y-x‖²/(2σ²),   p(x|y) ∝ exp(-U(x)).
+# (Matches the prior in Rosenbrock.logpdf and the σ²-Gaussian likelihood used in
+#  the ADMM/SVGD samplers; a, μ₀, σ are read from the same args/RB_dist below.)
+println("Generating Figure 6: Analytic posterior + samples overlay (2×2)...")
+
+a_post = Float64(RB_dist.a)        # scaling parameter a
+mu0_post = Float64(RB_dist.μ)      # prior mean μ₀ (mu_rb)
+sigma_post = Float64(args["sigma"]) # observation noise std σ
+n_grid = 400                       # grid resolution per axis
+
+fig = figure(figsize = (8, 8))
+for (k, j) in enumerate(inst_idx)
+    local ax = fig.add_subplot(2, 2, k)
+
+    # Observation y = (y₁, y₂) for this instance
+    local y1 = Float64(Y_fixed[1, 1, 1, j])
+    local y2 = Float64(Y_fixed[1, 1, 2, j])
+
+    # Grid spanning the sample range (both methods + observation + true value),
+    # padded by ~10% on each axis.
+    local x1_vals = vcat(
+        vec(Float64.(X_post[1, 1, 1, :, j])),
+        vec(Float64.(X_post_plain[1, 1, 1, :, j])),
+        [y1, Float64(X_fixed[1, 1, 1, j])],
+    )
+    local x2_vals = vcat(
+        vec(Float64.(X_post[1, 1, 2, :, j])),
+        vec(Float64.(X_post_plain[1, 1, 2, :, j])),
+        [y2, Float64(X_fixed[1, 1, 2, j])],
+    )
+    local x1_lo, x1_hi = minimum(x1_vals), maximum(x1_vals)
+    local x2_lo, x2_hi = minimum(x2_vals), maximum(x2_vals)
+    local pad1 = 0.1 * (x1_hi - x1_lo)
+    local pad2 = 0.1 * (x2_hi - x2_lo)
+    x1_lo -= pad1; x1_hi += pad1
+    x2_lo -= pad2; x2_hi += pad2
+
+    local g1 = range(x1_lo, x1_hi; length = n_grid)
+    local g2 = range(x2_lo, x2_hi; length = n_grid)
+
+    # Evaluate the unnormalized density exp(-U) on the grid.
+    # Rows index x₂ (g2), columns index x₁ (g1) for pcolormesh(X1, X2, P).
+    local X1 = [x1 for _ in g2, x1 in g1]
+    local X2 = [x2 for x2 in g2, _ in g1]
+    local U = a_post .* (X1 .- mu0_post) .^ 2 .+ (X2 .- X1 .^ 2) .^ 2 .+
+              ((y1 .- X1) .^ 2 .+ (y2 .- X2) .^ 2) ./ (2 * sigma_post^2)
+    local P = exp.(-(U .- minimum(U)))  # subtract min for numerical stability
+
+    # Background: analytic true posterior density
+    ax.pcolormesh(
+        collect(g1), collect(g2), P,
+        cmap = "viridis", shading = "auto", rasterized = true,
+    )
+
+    # ADMM-SVGD posterior samples
+    ax.scatter(
+        X_post[1, 1, 1, :, j], X_post[1, 1, 2, :, j],
+        s = 6.0, color = c_svgd, alpha = 0.35, rasterized = true,
+        label = k == 1 ? "ADMM-SVGD" : nothing,
+    )
+
+    # Plain SVGD posterior samples
+    ax.scatter(
+        X_post_plain[1, 1, 1, :, j], X_post_plain[1, 1, 2, :, j],
+        s = 6.0, color = c_plain_svgd, alpha = 0.35, rasterized = true,
+        label = k == 1 ? "SVGD" : nothing,
+    )
+
+    # Observed value
+    ax.scatter(
+        [Y_fixed[1, 1, 1, j]], [Y_fixed[1, 1, 2, j]],
+        s = 80.0, color = c_obs, marker = "v",
+        edgecolors = "black", linewidths = 1.0, zorder = 10,
+        label = k == 1 ? "Observation" : nothing,
+    )
+
+    # True value
+    ax.scatter(
+        [X_fixed[1, 1, 1, j]], [X_fixed[1, 1, 2, j]],
+        s = 80.0, color = c_true, marker = "^",
+        edgecolors = "black", linewidths = 1.0, zorder = 10,
+        label = k == 1 ? "True" : nothing,
+    )
+
+    ax.set_xlim([x1_lo, x1_hi])
+    ax.set_ylim([x2_lo, x2_hi])
+    ax.set_xlabel(L"$x_1$")
+    ax.set_ylabel(L"$x_2$")
+    ax.set_title("Instance $k")
+end
+
+# Shared legend from first panel
+handles, labels = fig.axes[1].get_legend_handles_labels()
+fig.legend(handles, labels, loc = "lower center", ncol = 4, fontsize = 9, frameon = false)
+tight_layout(rect = [0, 0.04, 1, 1])
+for path in [
+    joinpath(paper_figs, "true-posterior-overlay.png"),
+    joinpath(plot_save, "true-posterior-overlay.png"),
+]
+    _wsave(path, fig)
 end
 close(fig)
 

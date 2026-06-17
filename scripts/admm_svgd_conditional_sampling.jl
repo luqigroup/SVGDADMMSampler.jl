@@ -82,6 +82,10 @@ hist_logpdf = zeros(Float32, n_iters, test_num)
 hist_bandwidth = zeros(Float32, n_iters, test_num)
 hist_mean = zeros(Float32, n_iters, 2, test_num)
 hist_std = zeros(Float32, n_iters, 2, test_num)
+# ADMM augmented-Lagrangian diagnostics (ensemble means over particles):
+#   multiplier ε (dual variable) and penalty term (μ/2)(z - x₁²)²
+hist_multiplier = zeros(Float32, n_iters, test_num)
+hist_penalty = zeros(Float32, n_iters, test_num)
 
 # Run ADMM-SVGD for each fixed observation
 println("\nRunning ADMM-SVGD conditional sampling...")
@@ -117,12 +121,13 @@ for j = 1:test_num
     # With constraint: z = x₁²
     # Augmented Lagrangian: L = (1/2σ²)||y-x||² + a*(x₁-μ)² + (x₂-z)² - ε(z-x₁²) + (μ/2)(z-x₁²)²
 
-    # Solve for z: z = (2*x₂ + σ²*ε + σ²*μ*x₁²) / (2 + σ²*μ)
+    # Solve for z: z = (2*x₂ + ε + μ*x₁²) / (2 + μ)
+    # matches paper eq 30 (σ²-free z-minimizer; the likelihood term is z-independent)
     function solve_z_fn(s)
         x1 = s.particles[1, :]
         x2 = s.particles[2, :]
-        numerator = 2 .* x2 .+ σ² .* s.ε .+ σ² .* s.μ .* (x1 .^ 2)
-        denominator = 2 + σ² * s.μ
+        numerator = 2 .* x2 .+ s.ε .+ s.μ .* (x1 .^ 2)
+        denominator = 2 + s.μ
         s.z .= numerator ./ denominator
     end
 
@@ -174,6 +179,13 @@ for j = 1:test_num
         x1 = sampler.particles[1, :]
         constraint_res = mean(abs.(sampler.z .- x1 .^ 2))
 
+        # ADMM augmented-Lagrangian diagnostics (post-step, same timeline as the
+        # constraint residual). Multiplier: ensemble mean of the dual variable ε.
+        # Penalty term: ensemble mean of (μ/2)(z - x₁²)², the quadratic penalty in
+        # the augmented Lagrangian L (paper eq. 30).
+        avg_multiplier = mean(sampler.ε)
+        avg_penalty = mean(0.5f0 .* sampler.μ .* (sampler.z .- x1 .^ 2) .^ 2)
+
         # Save convergence history
         hist_constraint_res[iter, j] = constraint_res
         hist_logpdf[iter, j] = avg_logpdf
@@ -182,6 +194,8 @@ for j = 1:test_num
         hist_mean[iter, 2, j] = mean(sampler.particles[2, :])
         hist_std[iter, 1, j] = std(sampler.particles[1, :])
         hist_std[iter, 2, j] = std(sampler.particles[2, :])
+        hist_multiplier[iter, j] = avg_multiplier
+        hist_penalty[iter, j] = avg_penalty
 
         # Update progress
         next!(prog; showvalues = [
@@ -236,6 +250,8 @@ save_dict = merge(
         "hist_bandwidth" => hist_bandwidth,
         "hist_mean" => hist_mean,
         "hist_std" => hist_std,
+        "hist_multiplier" => hist_multiplier,
+        "hist_penalty" => hist_penalty,
     ),
 )
 
