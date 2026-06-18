@@ -36,8 +36,8 @@ Configuration files are in `config/`. Key parameters:
 | Parameter | ADMM-SVGD | Standard SVGD |
 |-----------|-----------|---------------|
 | Particles | 1000 | 1000 |
-| Step size ($\eta$) | 0.15 | 0.05 |
-| Iterations | 2500 | 5000 |
+| Step size ($\eta$) | 0.30 | 0.20 |
+| Iterations | 1500 | 2500 |
 | Penalty ($\mu$) | 1.0 | -- |
 
 **Step 1: Run ADMM-SVGD conditional sampling.** This generates the test instances (X_fixed, Y_fixed) and runs ADMM-SVGD for all five observations.

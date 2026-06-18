@@ -4,8 +4,8 @@
     "a": 0.5,
     "sigma": 0.5,
     "n_particles": 1000,
-    "n_iterations": 5000,
-    "eta": 0.05,
+    "n_iterations": 2500,
+    "eta": 0.20,
     "h": null,
     "update_bandwidth_every": 50,
     "test_num": 5

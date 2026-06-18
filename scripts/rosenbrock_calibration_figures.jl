@@ -142,8 +142,14 @@ for (panel, (c, coord)) in enumerate(coords)
         bin_std, bin_mse =
             binned_calibration(sd[:, c], error .^ 2; n_bins = args["reliability_bins"])
         rmse = sqrt.(bin_mse)
+        # drop empty bins (binned_calibration returns NaN where a std bin has no
+        # samples); leaving them in poisons the min/max axis range below.
+        keep = .!(isnan.(bin_std) .| isnan.(rmse))
+        bin_std = Vector{Float64}(bin_std[keep])
+        rmse = Vector{Float64}(rmse[keep])
+        isempty(bin_std) && continue
         ax.plot(
-            Vector{Float64}(bin_std), Vector{Float64}(rmse),
+            bin_std, rmse,
             "-o", ms = 4.0, lw = 1.2, color = color, label = label,
         )
         lo = min(lo, minimum(bin_std), minimum(rmse))
@@ -151,11 +157,12 @@ for (panel, (c, coord)) in enumerate(coords)
     end
 
     # y = x reference spanning the axis range.
-    ref = range(lo, hi; length = 100)
-    ax.plot(collect(ref), collect(ref), linestyle = "--", color = c_ref, lw = 1.0, alpha = 0.8)
-
-    ax.set_xlim([lo, hi])
-    ax.set_ylim([lo, hi])
+    if isfinite(lo) && isfinite(hi)
+        ref = range(lo, hi; length = 100)
+        ax.plot(collect(ref), collect(ref), linestyle = "--", color = c_ref, lw = 1.0, alpha = 0.8)
+        ax.set_xlim([lo, hi])
+        ax.set_ylim([lo, hi])
+    end
     ax.set_aspect("equal")
     ax.set_xlabel("posterior std")
     ax.set_ylabel("RMSE")
