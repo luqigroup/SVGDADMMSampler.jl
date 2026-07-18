@@ -88,16 +88,23 @@ fig, axes = subplots(2, 2; figsize = (8, 6))
 for (row, col, ranks, color, method, coord, tag) in panels
     local ax = axes[row, col]
 
+    # The 99% binomial band under uniformity is drawn BEHIND the bars, with its
+    # bounds marked, so that a reader can judge whether a tall bin is a genuine
+    # departure from uniformity or an expected sampling fluctuation. Drawn on
+    # top (the previous behavior) it merely tinted the bars and read as
+    # decorative shading.
+    ax.fill_between(
+        [0, args["sbc_N"]], band.lower, band.upper,
+        color = c_ref, alpha = 0.20, linewidth = 0.0, zorder = 0,
+    )
+    ax.axhline(y = band.lower, color = c_ref, linestyle = ":", lw = 0.9, alpha = 0.9, zorder = 1)
+    ax.axhline(y = band.upper, color = c_ref, linestyle = ":", lw = 0.9, alpha = 0.9, zorder = 1)
+    ax.axhline(y = band.expected, color = c_ref, linestyle = "--", lw = 1.0, alpha = 0.9, zorder = 1)
+
     ax.hist(
         Vector{Float64}(ranks), bins = collect(rank_edges),
         color = color, alpha = 0.75, edgecolor = "white", linewidth = 0.5,
-    )
-
-    # Uniform expectation (horizontal line at L/n_bins) and binomial band.
-    ax.axhline(y = band.expected, color = c_ref, linestyle = "--", lw = 1.0, alpha = 0.8)
-    ax.fill_between(
-        [0, args["sbc_N"]], band.lower, band.upper,
-        color = c_ref, alpha = 0.15, linewidth = 0.0,
+        zorder = 2,
     )
 
     ax.set_xlim([0, args["sbc_N"]])
