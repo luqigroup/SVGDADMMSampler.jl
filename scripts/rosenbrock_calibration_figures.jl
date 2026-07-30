@@ -14,7 +14,7 @@ using Printf
 using LinearAlgebra
 
 # Set plot configurations
-font_prop, sfmt = set_plot_configs(; fontsize = 10)
+font_prop, sfmt = set_plot_configs(; fontsize = 8)
 
 # Read configuration
 args = read_config("rosenbrock_calibration.json")
@@ -74,12 +74,12 @@ rank_edges = range(0, args["sbc_N"]; length = args["sbc_bins"] + 1)
 # (row, col) → (rank vector, color, method label, coordinate label, panel tag)
 panels = [
     (1, 1, admm_ranks_x1, c_admm, "ADMM-SVGD", L"$x_1$", "(a)"),
-    (1, 2, svgd_ranks_x1, c_svgd, "SVGD", L"$x_1$", "(b)"),
+    (1, 2, svgd_ranks_x1, c_svgd, "Reduced-space SVGD", L"$x_1$", "(b)"),
     (2, 1, admm_ranks_x2, c_admm, "ADMM-SVGD", L"$x_2$", "(c)"),
-    (2, 2, svgd_ranks_x2, c_svgd, "SVGD", L"$x_2$", "(d)"),
+    (2, 2, svgd_ranks_x2, c_svgd, "Reduced-space SVGD", L"$x_2$", "(d)"),
 ]
 
-fig, axes = subplots(2, 2; figsize = (8, 6))
+fig, axes = subplots(2, 2; figsize = (6.0, 4.5))
 for (row, col, ranks, color, method, coord, tag) in panels
     local ax = axes[row, col]
 
@@ -125,10 +125,10 @@ println("\nGenerating Figure B: reliability curve (RMSE-vs-std)...")
 coords = [(1, L"$x_1$"), (2, L"$x_2$")]
 methods = [
     (admm_cm, admm_sd, admm_theta, c_admm, "ADMM-SVGD"),
-    (svgd_cm, svgd_sd, svgd_theta, c_svgd, "SVGD"),
+    (svgd_cm, svgd_sd, svgd_theta, c_svgd, "Reduced-space SVGD"),
 ]
 
-fig, axes = subplots(1, 2; figsize = (8, 4))
+fig, axes = subplots(1, 2; figsize = (6.0, 3.0))
 for (panel, (c, coord)) in enumerate(coords)
     local ax = axes[panel]
 
@@ -164,7 +164,7 @@ for (panel, (c, coord)) in enumerate(coords)
     ax.set_xlabel("posterior std")
     ax.set_ylabel("RMSE")
     ax.set_title(coord)
-    ax.legend(loc = "upper left", fontsize = 9, frameon = false)
+    ax.legend(loc = "upper left", fontsize = 7, frameon = false)
     ax.spines["top"].set_visible(false)
     ax.spines["right"].set_visible(false)
 end
